@@ -6,6 +6,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.*
 import kotlinx.coroutines.flow.*
 import java.io.*
+import java.text.SimpleDateFormat
+import java.util.*
 import kotlin.time.*
 import kotlin.time.Duration.Companion.seconds
 
@@ -28,21 +30,24 @@ fun main(args: Array<String>) = runBlocking {
     val remoteAddress = args[0]
     val localAddress = IpAddress(args[1])
     val autonomousSystem = args[2].toUShort()
-    val endpoint =BgpEndpoint(localAddress, autonomousSystem)
+    val endpoint = BgpEndpoint(localAddress, autonomousSystem)
     val selectorManager = ActorSelectorManager(Dispatchers.IO)
     val bgpState = MutableStateFlow(BgpState())
     // launch client
     launch {
         val log = Log("uplink")
+        log("Proxy started with local $endpoint")
         retryIndefinitely(log, connectionRetryDuration) {
             connectToRemote(log, selectorManager, remoteAddress, endpoint, bgpState)
         }
     }
     // process incoming connections
     val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT)
+    var connectionCounter = 0
     while (true) {
         val socket = serverSocket.accept()
-        val log = Log((socket.remoteAddress as InetSocketAddress).hostname)
+        val hostname = (socket.remoteAddress as InetSocketAddress).hostname
+        val log = Log("${++connectionCounter}-$hostname")
         launch {
             catchAndLogErrors(log) {
                 handleClientConnection(log, socket, bgpState, endpoint)
@@ -62,6 +67,7 @@ suspend fun handleClientConnection(log: Log, socket: Socket, bgpState: StateFlow
         var lastState = BgpState()
         bgpState.collect { state ->
             val update = state.diffFrom(lastState)
+            log("Sending updated state: $state ($update)")
             val withdrawn = update.withdrawn.toMutableSet()
             val reachable = update.reachable.toMutableSet()
             while (withdrawn.isNotEmpty() || reachable.isNotEmpty()) {
@@ -78,7 +84,6 @@ suspend fun handleClientConnection(log: Log, socket: Socket, bgpState: StateFlow
                     writePacket(reachablePacket)
                 }
             }
-            log("Sent updated state: $state ($update)")
             lastState = state
         }
     }
@@ -129,11 +134,11 @@ private suspend fun maintainBgpConnection(
         val remoteAs = readUShort()
         val holdTime = readUShort()
         val remoteId = IpAddress(readBytes(4))
-        log("Connected to AS=$remoteAs ID=$remoteId")
+        log("Connected to ${BgpEndpoint(remoteId, remoteAs)}")
         if (holdTime > 0u) commonHoldTime = minOf(HOLD_TIME, holdTime)
     }
-    // send keep alive every 1/3 of hold time (see specs)
-    launch {
+    // send keep alive right now and every 1/3 of hold time (see specs)
+    launch(start = CoroutineStart.UNDISPATCHED) {
         repeatEvery(commonHoldTime.toInt().seconds / 3) {
             output.writeBgpMessage(BgpType.KEEP_ALIVE) {}
         }
@@ -203,7 +208,9 @@ fun IpAddress(bytes: ByteArray) = IpAddress(bytes.toUByteArray())
 data class BgpEndpoint(
     val address: IpAddress,
     val autonomousSystem: UShort
-)
+) {
+    override fun toString(): String = "id=$address (AS=$autonomousSystem)"
+}
 
 suspend fun retryIndefinitely(log: Log, delay: Duration, action: suspend () -> Unit) {
     repeatEvery(delay) {
@@ -266,7 +273,9 @@ suspend fun ByteReadChannel.readBgpMessage(block: suspend ByteReadPacket.(BgpTyp
 }
 
 class Log(private val id: String) {
+
     operator fun invoke(msg: String) {
-        println("BGP[$id]: $msg")
+        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Date())
+        println("$timestamp [$id]: $msg")
     }
 }

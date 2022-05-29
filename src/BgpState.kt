@@ -7,7 +7,8 @@ data class BgpUpdate(
     val reachable: Set<IpAddressPrefix>,
     val attributes: BgpAttributes
 ) {
-    override fun toString(): String = "withdrawn=${withdrawn.size}, reachable=${reachable.size}"
+    override fun toString(): String =
+        "withdrawn=${withdrawn.size}, reachable=${reachable.size}; attr=${attributes.bytes.size} bytes"
 }
 
 data class BgpState(
