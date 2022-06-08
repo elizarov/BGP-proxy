@@ -1,6 +1,6 @@
 plugins {
     application
-    kotlin("jvm") version "1.6.21"
+    kotlin("multiplatform") version "1.6.21"
     id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
@@ -10,22 +10,37 @@ repositories {
     mavenCentral()
 }
 
+kotlin {
+    targets {
+        jvm { withJava() }
+        linuxX64("linux") {
+            binaries {
+                executable("bgpProxy", listOf(RELEASE)) {
+                    baseName = "bgp-proxy"
+                }
+            }
+        }
+    }
+    sourceSets {
+        val commonMain by getting {
+            dependencies {
+                implementation("io.ktor:ktor-network:$ktorVersion")
+            }
+        }
+    }
+
+    sourceSets.all {
+        languageSettings.apply {
+            optIn("kotlin.RequiresOptIn")
+            optIn("kotlin.ExperimentalUnsignedTypes")
+            optIn("kotlin.time.ExperimentalTime")
+        }
+    }
+}
+
 java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(9))
-    }
-}
-
-dependencies {
-    implementation("io.ktor:ktor-network:$ktorVersion")
-}
-
-sourceSets {
-    val main by getting {
-        java.srcDir("src")
-    }
-    val test by getting {
-        java.srcDir("test")
     }
 }
 
@@ -37,11 +52,4 @@ tasks.shadowJar {
     archiveBaseName.set("bgp-proxy")
 }
 
-tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
-    kotlinOptions.freeCompilerArgs += listOf(
-        "-opt-in=kotlin.RequiresOptIn",
-        "-opt-in=kotlin.ExperimentalUnsignedTypes",
-        "-opt-in=kotlin.time.ExperimentalTime",
-    )
-}
 

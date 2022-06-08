@@ -2,12 +2,10 @@ import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.utils.io.*
 import io.ktor.utils.io.core.*
+import io.ktor.utils.io.errors.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.*
 import kotlinx.coroutines.flow.*
-import java.io.*
-import java.text.SimpleDateFormat
-import java.util.*
 import kotlin.time.*
 import kotlin.time.Duration.Companion.seconds
 
@@ -31,7 +29,7 @@ fun main(args: Array<String>) = runBlocking {
     val localAddress = IpAddress(args[1])
     val autonomousSystem = args[2].toUShort()
     val endpoint = BgpEndpoint(localAddress, autonomousSystem)
-    val selectorManager = ActorSelectorManager(Dispatchers.IO)
+    val selectorManager = SelectorManager(createSelectorDispatcher())
     val bgpState = MutableStateFlow(BgpState())
     // launch client
     launch {
@@ -275,7 +273,6 @@ suspend fun ByteReadChannel.readBgpMessage(block: suspend ByteReadPacket.(BgpTyp
 class Log(private val id: String) {
 
     operator fun invoke(msg: String) {
-        val timestamp = SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Date())
-        println("$timestamp [$id]: $msg")
+        println("${currentTimestamp()} [$id]: $msg")
     }
 }
