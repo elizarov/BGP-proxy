@@ -40,7 +40,7 @@ fun main(args: Array<String>) = runBlocking {
         }
     }
     // process incoming connections
-    val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT)
+    val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT) { reuseAddress = true }
     var connectionCounter = 0
     while (true) {
         val socket = serverSocket.accept()
