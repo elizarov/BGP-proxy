@@ -39,6 +39,7 @@ class BitTrie {
                 result += cur.prefix ?: IpAddressPrefix(length, bits.copyOf(prefixBytes(length)))
                 return
             }
+            if (length == 32) return
             cur.c0?.let { scan(it, length + 1) }
             bits.setBitAt(length)
             cur.c1?.let { scan(it, length + 1) }
