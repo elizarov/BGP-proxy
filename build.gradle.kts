@@ -1,10 +1,10 @@
 plugins {
     application
-    kotlin("multiplatform") version "1.6.21"
+    kotlin("multiplatform") version "1.7.20"
     id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
-val ktorVersion = "2.0.2"
+val ktorVersion = "2.1.2"
 
 repositories {
     mavenCentral()
@@ -40,7 +40,7 @@ kotlin {
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(9))
+        languageVersion.set(JavaLanguageVersion.of(17))
     }
 }
 
