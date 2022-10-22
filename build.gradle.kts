@@ -27,6 +27,11 @@ kotlin {
                 implementation("io.ktor:ktor-network:$ktorVersion")
             }
         }
+        val commonTest by getting {
+            dependencies {
+                implementation("org.jetbrains.kotlin:kotlin-test")
+            }
+        }
     }
 
     sourceSets.all {

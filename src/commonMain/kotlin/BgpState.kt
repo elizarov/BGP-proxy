@@ -3,9 +3,9 @@
 import io.ktor.utils.io.core.*
 
 data class BgpUpdate(
-    val withdrawn: Set<IpAddressPrefix>,
-    val reachable: Set<IpAddressPrefix>,
-    val attributes: BgpAttributes
+    val withdrawn: Set<IpAddressPrefix> = emptySet(),
+    val reachable: Set<IpAddressPrefix> = emptySet(),
+    val attributes: BgpAttributes = BgpAttributes()
 ) {
     override fun toString(): String =
         "withdrawn=${withdrawn.size}, reachable=${reachable.size}; attr=${attributes.bytes.size} bytes"
@@ -44,7 +44,7 @@ fun ByteReadPacket.readPrefixes(totalLength: Int): Set<IpAddressPrefix> = buildS
     while (remaining > 0) {
         val length = readUByte().toInt()
         check(length in 0..32) { "BGP: Prefix length must be in range 0..32 but got: $length" }
-        val n = (length + 7) / 8
+        val n = prefixBytes(length)
         val prefix = readBytes(n)
         add(IpAddressPrefix(length, prefix))
         remaining -= 1 + n
@@ -60,7 +60,7 @@ fun composePrefixes(set: MutableSet<IpAddressPrefix>, maxLength: Int) = buildPac
         writeByte(length.toByte())
         writeFully(prefix.prefix)
         composed += prefix
-        remBytes -= 1 + (length + 7) / 8
+        remBytes -= 1 + prefixBytes(length)
     }
     set -= composed
 }
@@ -69,11 +69,17 @@ class IpAddressPrefix(
     val length: Int,
     val prefix: ByteArray
 ) {
+    init {
+        check(prefix.size == prefixBytes(length))
+    }
+    fun bitAt(i: Int) = prefix.bitAt(i)
     override fun toString(): String = "${prefix.copyOf(4).toHexString()}/$length"
     override fun equals(other: Any?): Boolean =
         other is IpAddressPrefix && other.length == length && other.prefix.contentEquals(prefix)
     override fun hashCode(): Int = length * 31 + prefix.contentHashCode()
 }
+
+fun prefixBytes(length: Int) = (length + 7) / 8
 
 fun ByteArray.toHexString(): String =
     joinToString("") { it.toUByte().toString(16).padStart(2, '0') }

@@ -15,29 +15,58 @@ const val HOLD_TIME: UShort = 240u
 
 val connectionRetryDuration = 3.seconds
 val initialUpdateDuration = 3.seconds
+val fileRescanDuration = 1.seconds
 
 val BGP_MARKER = UByteArray(16) { 0xffu }
 
 enum class BgpType(val tag: Byte) { OPEN(1), UPDATE(2), NOTIFICATION(3), KEEP_ALIVE(4) }
 
 fun main(args: Array<String>) = runBlocking {
-    if (args.size != 3) {
-        println("Usage: PGPProxy <remote-uplink-address> <local-address> <local-autonomous-system>")
+    if (args.size !in 3..4) {
+        println("Usage: PGPProxy <remote-uplink-address> <local-address> <local-autonomous-system> [<override-file>]")
         return@runBlocking
     }
     val remoteAddress = args[0]
     val localAddress = IpAddress(args[1])
     val autonomousSystem = args[2].toUShort()
+    val overrideFile = args.getOrNull(3)
     val endpoint = BgpEndpoint(localAddress, autonomousSystem)
     val selectorManager = SelectorManager(createSelectorDispatcher())
-    val bgpState = MutableStateFlow(BgpState())
+    val bgpRemoteState = MutableStateFlow(BgpState())
+    val bgpOverride = MutableStateFlow(BgpUpdate())
+    if (overrideFile != null) {
+        val log = Log("override")
+        // launch file tracker
+        launch {
+            log("Started tracking override file $overrideFile")
+            var prevErrors = emptyList<String>()
+            retryIndefinitely(log, fileRescanDuration) {
+                val (update, errors) = parseOverrideFile(overrideFile)
+                if (errors != prevErrors) {
+                    errors.forEach { log("ERROR: $it") }
+                    prevErrors = errors
+                }
+                bgpOverride.emit(update)
+            }
+        }
+        // log override changes
+        launch {
+            bgpOverride.collect { override ->
+                log("+${override.reachable.size} prefixes, -${override.withdrawn.size} prefixes")
+            }
+        }
+    }
     // launch client
     launch {
         val log = Log("uplink")
         log("Proxy started with local $endpoint")
         retryIndefinitely(log, connectionRetryDuration) {
-            connectToRemote(log, selectorManager, remoteAddress, endpoint, bgpState)
+            connectToRemote(log, selectorManager, remoteAddress, endpoint, bgpRemoteState)
         }
+    }
+    // combine remote & override
+    val bgpState = combine(bgpRemoteState, bgpOverride) { remote, override ->
+        remote.applyOverride(override)
     }
     // process incoming connections
     val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT) { reuseAddress = true }
@@ -54,7 +83,7 @@ fun main(args: Array<String>) = runBlocking {
     }
 }
 
-suspend fun handleClientConnection(log: Log, socket: Socket, bgpState: StateFlow<BgpState>, endpoint: BgpEndpoint) = coroutineScope {
+suspend fun handleClientConnection(log: Log, socket: Socket, bgpState: Flow<BgpState>, endpoint: BgpEndpoint) = coroutineScope {
     log("Accepted connection")
     maintainBgpConnection(log, socket, endpoint) {connection ->
         // parse all messages and ignore all incoming updates
@@ -92,7 +121,7 @@ suspend fun connectToRemote(
     selectorManager: SelectorManager,
     remoteAddress: String,
     endpoint: BgpEndpoint,
-    bgpState: MutableStateFlow<BgpState>
+    bgpRemoteState: MutableStateFlow<BgpState>
 ) {
     log("Connecting to $remoteAddress ...")
     val socket = aSocket(selectorManager).tcp().connect(remoteAddress, BGP_PORT)
@@ -102,7 +131,7 @@ suspend fun connectToRemote(
         delay(initialUpdateDuration)
         // constantly emit all incoming state into the state flow
         log("Start serving updates from the new connection")
-        bgpState.emitAll(updates)
+        bgpRemoteState.emitAll(updates)
     }
 }
 
