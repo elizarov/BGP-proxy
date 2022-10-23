@@ -39,6 +39,8 @@ fun parsePrefixOrNull(s: String): IpAddressPrefix? {
     return IpAddressPrefix(length, ip.copyOf(prefixBytes(length)))
 }
 
+fun ByteArray.bitAt(i: Int) = (get(i / 8).toInt() shr (7 - i % 8)) and 1
+
 fun BgpState.applyOverride(override: BgpUpdate): BgpState {
     val bt = prefixes.toBitTrie()
     val (withdrawn, reachable) = override

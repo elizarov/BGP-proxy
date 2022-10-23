@@ -39,19 +39,16 @@ class BitTrie {
 
     fun toSet(): Set<IpAddressPrefix> {
         val result = mutableSetOf<IpAddressPrefix>()
-        val bits = ByteArray(4)
-        fun scan(cur: Node, length: Int) {
+        fun scan(cur: Node, length: Int, bits: Int) {
             if (cur.present) {
-                result += cur.prefix ?: IpAddressPrefix(length, bits.copyOf(prefixBytes(length)))
+                result += cur.prefix ?: IpAddressPrefix(length, bits)
                 return
             }
             if (length == 32) return
-            cur.c0?.let { scan(it, length + 1) }
-            bits.setBitAt(length)
-            cur.c1?.let { scan(it, length + 1) }
-            bits.clearBitAt(length)
+            cur.c0?.let { scan(it, length + 1, bits) }
+            cur.c1?.let { scan(it, length + 1, bits or (1 shl (31 - length))) }
         }
-        scan(root, 0)
+        scan(root, 0, 0)
         return result
     }
 
@@ -76,21 +73,3 @@ class BitTrie {
 }
 
 fun Set<IpAddressPrefix>.toBitTrie() = BitTrie().apply { forEach { add(it) } }
-
-fun ByteArray.bitAt(i: Int) = (get(i / 8).toInt() shr (7 - i % 8)) and 1
-
-fun ByteArray.setBitAt(i: Int) {
-    val index = i / 8
-    val mask = 1 shl (7 - i % 8)
-    val old = get(index).toInt()
-    val new =  old or mask
-    set(index, new.toByte())
-}
-
-fun ByteArray.clearBitAt(i: Int) {
-    val index = i / 8
-    val mask = 1 shl (7 - i % 8)
-    val old = get(index).toInt()
-    val new = old and mask.inv()
-    set(index, new.toByte())
-}

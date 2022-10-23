@@ -58,7 +58,7 @@ fun composePrefixes(set: MutableSet<IpAddressPrefix>, maxLength: Int) = buildPac
         if (remBytes <= 0) break
         val length = prefix.length
         writeByte(length.toByte())
-        writeFully(prefix.prefix)
+        for (i in 0 until prefix.nBytes) writeByte(prefix[i])
         composed += prefix
         remBytes -= 1 + prefixBytes(length)
     }
@@ -67,16 +67,29 @@ fun composePrefixes(set: MutableSet<IpAddressPrefix>, maxLength: Int) = buildPac
 
 class IpAddressPrefix(
     val length: Int,
-    val prefix: ByteArray
+    val bits: Int
 ) {
     init {
-        check(prefix.size == prefixBytes(length))
+        val mask = (1 shl (32 - length)) - 1
+        check(bits and mask == 0)
     }
-    fun bitAt(i: Int) = prefix.bitAt(i)
-    override fun toString(): String = "${prefix.copyOf(4).toHexString()}/$length"
+    val nBytes: Int get() = prefixBytes(length)
+    operator fun get(i: Int): Byte = (bits shr ((3 - i) * 8)).toByte()
+    fun bitAt(i: Int) = (bits shr (31 - i)) and 1
+    override fun toString(): String = "${bits.toString(16)}/$length"
     override fun equals(other: Any?): Boolean =
-        other is IpAddressPrefix && other.length == length && other.prefix.contentEquals(prefix)
-    override fun hashCode(): Int = length * 31 + prefix.contentHashCode()
+        other is IpAddressPrefix && other.length == length && other.bits == bits
+    override fun hashCode(): Int = length * 31 + bits
+}
+
+fun IpAddressPrefix(length: Int, prefix: ByteArray): IpAddressPrefix {
+    val n = prefix.size
+    check(n == prefixBytes(length))
+    var bits = 0
+    for (i in 0 until n) {
+        bits = bits or ((prefix[i].toInt() and 0xff) shl ((3 - i) * 8))
+    }
+    return IpAddressPrefix(length, bits)
 }
 
 fun prefixBytes(length: Int) = (length + 7) / 8
