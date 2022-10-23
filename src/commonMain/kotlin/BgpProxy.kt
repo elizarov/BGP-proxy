@@ -67,7 +67,7 @@ fun main(args: Array<String>) = runBlocking {
     // combine remote & override
     val bgpState = combine(bgpRemoteState, bgpOverride) { remote, override ->
         remote.applyOverride(override)
-    }
+    }.stateIn(this)
     // process incoming connections
     val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT) { reuseAddress = true }
     var connectionCounter = 0
