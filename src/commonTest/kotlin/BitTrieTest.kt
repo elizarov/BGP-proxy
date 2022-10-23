@@ -23,5 +23,7 @@ class BitTrieTest {
         assertEquals(setOf(p2a, p2b), bt.toSet())
         bt.add(p1)
         assertEquals(setOf(p1, p2a, p2b), bt.toSet())
+        bt.add(p3)
+        assertEquals(setOf(p2), bt.toSet())
     }
 }

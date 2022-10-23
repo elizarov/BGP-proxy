@@ -1,17 +1,23 @@
-import kotlin.experimental.and
-import kotlin.experimental.or
-
 class BitTrie {
     private val root = Node()
 
     fun add(prefix: IpAddressPrefix) {
         var cur = root
+        val prev = ArrayList<Node>()
         for (i in 0 until prefix.length) {
             if (cur.present) return
+            prev += cur
             cur = cur[prefix.bitAt(i)]
         }
         cur.prefix = prefix
         cur.markPresent(true)
+        var j = prev.lastIndex
+        while (j >= 0) {
+            val p = prev[j]
+            if (p.c0?.present != true || p.c1?.present != true) break
+            p.markPresent(true)
+            j--
+        }
     }
 
     fun remove(prefix: IpAddressPrefix) {
