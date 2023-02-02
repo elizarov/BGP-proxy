@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalCoroutinesApi::class, ExperimentalCoroutinesApi::class)
+
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
 import io.ktor.utils.io.*
@@ -33,7 +35,7 @@ fun main(args: Array<String>) = runBlocking {
     val endpoint = BgpEndpoint(localAddress, autonomousSystem)
     val selectorManager = SelectorManager(createSelectorDispatcher())
     val bgpRemoteState = MutableStateFlow(BgpState())
-    val bgpOverride = MutableStateFlow(BgpUpdate())
+    val bgpOverrides = MutableStateFlow(emptyList<BgpOverride<AddressRange>>())
     if (overrideFile != null) {
         val log = Log("override")
         // launch file tracker
@@ -41,18 +43,20 @@ fun main(args: Array<String>) = runBlocking {
             log("Started tracking override file $overrideFile")
             var prevErrors = emptyList<String>()
             retryIndefinitely(log, fileRescanDuration) {
-                val (update, errors) = parseOverrideFile(overrideFile)
+                val (overrides, errors) = parseOverrideFile(overrideFile)
                 if (errors != prevErrors) {
                     errors.forEach { log("ERROR: $it") }
                     prevErrors = errors
                 }
-                bgpOverride.emit(update)
+                bgpOverrides.emit(overrides)
             }
         }
         // log override changes
         launch {
-            bgpOverride.collect { override ->
-                log("+${override.reachable.size} prefixes, -${override.withdrawn.size} prefixes")
+            bgpOverrides.collect { overrides ->
+                log("overriding ${overrides.size} address ranges " +
+                        "(+${overrides.count { it.op == BgpOverrideOp.PLUS}} " +
+                        "-${overrides.count { it.op == BgpOverrideOp.MINUS}})")
             }
         }
     }
@@ -64,9 +68,21 @@ fun main(args: Array<String>) = runBlocking {
             connectToRemote(log, selectorManager, remoteAddress, endpoint, bgpRemoteState)
         }
     }
-    // combine remote & override
-    val bgpState = combine(bgpRemoteState, bgpOverride) { remote, override ->
-        remote.applyOverride(override)
+    // resolve all configured overrides
+    val resolvedOverrides = bgpOverrides.flatMapLatest { overrides ->
+        val flows = overrides.map { (op, addressRange) ->
+            when (addressRange) {
+                is IpAddressPrefix -> flowOf(listOf(BgpOverride(op, addressRange)))
+                is HostName -> resolveFlow(addressRange.host).map { list ->
+                    list.map { prefix -> BgpOverride(op, prefix) }
+                }
+            }
+        }
+        combine(flows) { lists -> lists.flatMap { it } }
+    }
+    // combine remote & resolved overrides
+    val bgpState = combine(bgpRemoteState, resolvedOverrides) { remote, overrides ->
+        remote.applyOverrides(overrides)
     }.stateIn(this)
     // process incoming connections
     val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT) { reuseAddress = true }
@@ -300,7 +316,6 @@ suspend fun ByteReadChannel.readBgpMessage(block: suspend ByteReadPacket.(BgpTyp
 }
 
 class Log(private val id: String) {
-
     operator fun invoke(msg: String) {
         println("${currentTimestamp()} [$id]: $msg")
     }

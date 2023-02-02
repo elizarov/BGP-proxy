@@ -1,11 +1,15 @@
+@file:OptIn(ExperimentalCoroutinesApi::class)
+
 import io.ktor.utils.io.errors.*
 import kotlinx.cinterop.*
 import kotlinx.coroutines.*
 import platform.posix.*
 
-@OptIn(ExperimentalCoroutinesApi::class)
 actual fun createSelectorDispatcher(): CoroutineDispatcher =
     newSingleThreadContext("Selector")
+
+actual fun createResolverDispatcher(): CoroutineDispatcher =
+    newSingleThreadContext("Resolver")
 
 actual fun currentTimestamp(): String = memScoped {
     val time = alloc<time_tVar>()

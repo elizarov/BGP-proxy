@@ -1,32 +1,42 @@
+enum class BgpOverrideOp { PLUS, MINUS }
+
+data class BgpOverride<T : AddressRange>(val op: BgpOverrideOp, val host: T)
+
 data class BgpOverrideParseResult(
-    val update: BgpUpdate,
-    val errors: List<String>
+    val overrides: List<BgpOverride<AddressRange>> = emptyList(),
+    val errors: List<String> = emptyList()
 )
 
 fun parseOverrideFile(overrideFile: String): BgpOverrideParseResult {
     val lines = readFileBytesCatching(overrideFile)
-        .getOrElse { ex -> return BgpOverrideParseResult(BgpUpdate(), listOf(ex.toString())) }
+        .getOrElse { ex -> return BgpOverrideParseResult(errors = listOf(ex.toString())) }
         .decodeToString().split("\n")
-    val withdrawn = mutableSetOf<IpAddressPrefix>()
-    val reachable = mutableSetOf<IpAddressPrefix>()
+    val overrides = ArrayList<BgpOverride<AddressRange>>()
     val errors = ArrayList<String>()
     for ((index, line0) in lines.withIndex()) {
         val line = line0.substringBefore('#').trim()
         if (line.isEmpty()) continue
-        val op = line[0]
+        val op = when (line[0]) {
+            '+' -> BgpOverrideOp.PLUS
+            '-' -> BgpOverrideOp.MINUS
+            else -> {
+                errors += "Line ${index + 1}: Invalid operation '$line'"
+                continue
+            }
+        }
         val address = line.substring(1).trim()
-        val ip = parsePrefixOrNull(address)
-        if (ip == null) {
+        val addressRange: AddressRange? = if (address.isEmpty() || address[0] in '0'..'9') {
+            parsePrefixOrNull(address)
+        } else {
+            HostName(address)
+        }
+        if (addressRange == null) {
             errors += "Line ${index + 1}: Invalid ip address prefix '$address'"
             continue
         }
-        when (op) {
-            '+' -> reachable += ip
-            '-' -> withdrawn += ip
-            else -> errors += "Line ${index + 1}: Invalid operation '$op'"
-        }
+        overrides += BgpOverride(op, addressRange)
     }
-    return BgpOverrideParseResult(BgpUpdate(withdrawn, reachable), errors)
+    return BgpOverrideParseResult(overrides, errors)
 }
 
 fun parsePrefixOrNull(s: String): IpAddressPrefix? {
@@ -41,10 +51,11 @@ fun parsePrefixOrNull(s: String): IpAddressPrefix? {
 
 fun ByteArray.bitAt(i: Int) = (get(i / 8).toInt() shr (7 - i % 8)) and 1
 
-fun BgpState.applyOverride(override: BgpUpdate): BgpState {
+fun BgpState.applyOverrides(overrides: List<BgpOverride<IpAddressPrefix>>): BgpState {
     val bt = prefixes.toBitTrie()
-    val (withdrawn, reachable) = override
-    reachable.forEach { bt.add(it) }
-    withdrawn.forEach { bt.remove(it) }
+    for ((op, prefix) in overrides) when(op) {
+        BgpOverrideOp.PLUS -> bt.add(prefix)
+        BgpOverrideOp.MINUS -> bt.remove(prefix)
+    }
     return BgpState(bt.toSet(), attributes)
 }

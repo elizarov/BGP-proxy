@@ -65,10 +65,14 @@ fun composePrefixes(set: MutableSet<IpAddressPrefix>, maxLength: Int) = buildPac
     set -= composed
 }
 
+sealed interface AddressRange
+
+data class HostName(val host: String) : AddressRange
+
 class IpAddressPrefix(
-    val length: Int,
+    val length: Int = 32,
     val bits: Int
-) {
+) : AddressRange {
     init {
         val mask = (1 shl (32 - length)) - 1
         check(bits and mask == 0)
@@ -76,13 +80,21 @@ class IpAddressPrefix(
     val nBytes: Int get() = prefixBytes(length)
     operator fun get(i: Int): Byte = (bits shr ((3 - i) * 8)).toByte()
     fun bitAt(i: Int) = (bits shr (31 - i)) and 1
-    override fun toString(): String = "${bits.toString(16)}/$length"
+    override fun toString(): String {
+        val sb = StringBuilder()
+        for (i in 0 until nBytes) {
+            if (i != 0) sb.append('.')
+            sb.append(this[i].toUByte())
+        }
+        if (length < 32) sb.append("/$length")
+        return sb.toString()
+    }
     override fun equals(other: Any?): Boolean =
         other is IpAddressPrefix && other.length == length && other.bits == bits
     override fun hashCode(): Int = length * 31 + bits
 }
 
-fun IpAddressPrefix(length: Int, prefix: ByteArray): IpAddressPrefix {
+fun IpAddressPrefix(length: Int = 32, prefix: ByteArray): IpAddressPrefix {
     val n = prefix.size
     check(n == prefixBytes(length))
     var bits = 0
