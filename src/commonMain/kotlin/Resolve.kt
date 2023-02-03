@@ -1,3 +1,5 @@
+@file:OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
+
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlin.time.Duration.Companion.seconds
@@ -11,35 +13,48 @@ sealed class ResolveResult {
 
 expect fun resolveHostAddr(host: String): ResolveResult
 
-private val resolveScope = CoroutineScope(SupervisorJob() + createResolverDispatcher())
-private val resolveFlows = HashMap<String, Flow<List<IpAddressPrefix>>>()
-private val resolveLog = Log("resolve")
+private val resolveAgain = 1.seconds
+private val keepAlive = 1.hours
+private val stopAfter = 10.seconds
 
-private val RESOLVE_AGAIN = 1.seconds
-private val KEEP_ALIVE = 1.hours
+class HostResolver {
+    private val ioDispatcher = newSingleThreadContext("ResolverIO")
+    private val mainDispatcher = newSingleThreadContext("ResolverMain")
+    private val mainScope = CoroutineScope(SupervisorJob() + mainDispatcher)
+    // mutations are confined to mainDispatcher thread
+    private val flows = HashMap<String, Flow<List<IpAddressPrefix>>>()
+    private val log = Log("resolve")
 
-fun resolveFlow(host: String): Flow<List<IpAddressPrefix>> =
-    resolveFlows.getOrPut(host) {
-        newResolveFlow(host).stateIn(resolveScope, SharingStarted.WhileSubscribed(KEEP_ALIVE), emptyList())
+    suspend fun resolveFlow(host: String): Flow<List<IpAddressPrefix>> = withContext(mainDispatcher) {
+        flows.getOrPut(host) {
+            newResolveFlow(host).stateIn(mainScope, SharingStarted.WhileSubscribed(stopAfter), emptyList())
+        }
     }
 
-private fun newResolveFlow(host: String) = flow {
-    val known = LinkedHashMap<IpAddressPrefix, Monotonic.ValueTimeMark>()
-    var last = emptyList<IpAddressPrefix>()
-    while (true) {
-        val result = resolveHostAddr(host)
-        val now = Monotonic.markNow()
-        when (result) {
-            is ResolveResult.Err -> resolveLog("$host: ${result.message}")
-            is ResolveResult.Ok -> for (address in result.list) known[address] = now
+    private fun newResolveFlow(host: String) = flow {
+        val known = LinkedHashMap<IpAddressPrefix, Monotonic.ValueTimeMark>()
+        var lastResult = emptyList<IpAddressPrefix>()
+        var lastError: String? = null
+        while (true) {
+            val result = withContext(ioDispatcher) { resolveHostAddr(host) }
+            val now = Monotonic.markNow()
+            when (result) {
+                is ResolveResult.Err -> {
+                    if (result.message != lastError) {
+                        lastError = result.message
+                        log("$host: $lastError")
+                    }
+                }
+                is ResolveResult.Ok -> for (address in result.list) known[address] = now
+            }
+            known.values.removeAll { mark -> mark.elapsedNow() > keepAlive }
+            val current = known.keys.toList()
+            if (current != lastResult) {
+                log("$host -> ${current.joinToString(", ")}")
+                emit(current)
+                lastResult = current
+            }
+            delay(resolveAgain)
         }
-        known.values.removeAll { mark -> mark.elapsedNow() > KEEP_ALIVE }
-        val current = known.keys.toList()
-        if (current != last) {
-            resolveLog("$host -> ${current.joinToString(", ")}")
-            emit(current)
-            last = current
-        }
-        delay(RESOLVE_AGAIN)
     }
 }

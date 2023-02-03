@@ -1,4 +1,4 @@
-@file:OptIn(ExperimentalCoroutinesApi::class, ExperimentalCoroutinesApi::class)
+@file:OptIn(ExperimentalCoroutinesApi::class)
 
 import io.ktor.network.selector.*
 import io.ktor.network.sockets.*
@@ -34,6 +34,7 @@ fun main(args: Array<String>) = runBlocking {
     val overrideFile = args.getOrNull(3)
     val endpoint = BgpEndpoint(localAddress, autonomousSystem)
     val selectorManager = SelectorManager(createSelectorDispatcher())
+    val hostResolver = HostResolver()
     val bgpRemoteState = MutableStateFlow(BgpState())
     val bgpOverrides = MutableStateFlow(emptyList<BgpOverride<AddressRange>>())
     if (overrideFile != null) {
@@ -73,7 +74,7 @@ fun main(args: Array<String>) = runBlocking {
         val flows = overrides.map { (op, addressRange) ->
             when (addressRange) {
                 is IpAddressPrefix -> flowOf(listOf(BgpOverride(op, addressRange)))
-                is HostName -> resolveFlow(addressRange.host).map { list ->
+                is HostName -> hostResolver.resolveFlow(addressRange.host).map { list ->
                     list.map { prefix -> BgpOverride(op, prefix) }
                 }
             }

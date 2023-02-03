@@ -14,7 +14,7 @@ actual fun resolveHostAddr(host: String): ResolveResult {
         while (cur != null) with (cur.pointed) {
             val addr = ai_addr!!.reinterpret<sockaddr_in>().pointed.sin_addr.s_addr.toInt()
             var bits = 0
-            for (i in 0 until 3) {
+            for (i in 0..3) {
                 bits = bits or (((addr shr (8 * i)) and 0xff) shl (8 * (3 - i)))
             }
             list += IpAddressPrefix(bits = bits)

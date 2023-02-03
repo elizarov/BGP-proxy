@@ -8,9 +8,6 @@ import platform.posix.*
 actual fun createSelectorDispatcher(): CoroutineDispatcher =
     newSingleThreadContext("Selector")
 
-actual fun createResolverDispatcher(): CoroutineDispatcher =
-    newSingleThreadContext("Resolver")
-
 actual fun currentTimestamp(): String = memScoped {
     val time = alloc<time_tVar>()
     time(time.ptr)

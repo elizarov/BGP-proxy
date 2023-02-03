@@ -9,7 +9,8 @@ class BgpOverrideTest {
         val expectedOverrides = listOf(
             BgpOverride(BgpOverrideOp.MINUS, IpAddressPrefix(16, byteArrayOf(192.toByte(), 168.toByte()))),
             BgpOverride(BgpOverrideOp.PLUS, IpAddressPrefix(32, byteArrayOf(1, 1, 1, 1))),
-            BgpOverride(BgpOverrideOp.PLUS, HostName("pbs.twimg.com"))
+            BgpOverride(BgpOverrideOp.PLUS, HostName("pbs.twimg.com")),
+            BgpOverride(BgpOverrideOp.MINUS, HostName("qwerty"))
         )
         assertEquals(expectedOverrides, overrides)
     }

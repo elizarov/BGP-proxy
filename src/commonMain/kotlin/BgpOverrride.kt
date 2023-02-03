@@ -44,9 +44,10 @@ fun parsePrefixOrNull(s: String): IpAddressPrefix? {
     if (length !in 0..32) return null
     val ip = s.substringBefore('/').split(".")
         .map { (it.toUByteOrNull() ?: return null).toByte() }.toByteArray()
-    if (ip.size != 4) return null
-    for (i in length until 24) if (ip.bitAt(i) != 0) return null
-    return IpAddressPrefix(length, ip.copyOf(prefixBytes(length)))
+    val needBytes = prefixBytes(length)
+    if (ip.size > 4 || ip.size < needBytes) return null
+    for (i in length until ip.size * 8) if (ip.bitAt(i) != 0) return null
+    return IpAddressPrefix(length, ip.copyOf(needBytes))
 }
 
 fun ByteArray.bitAt(i: Int) = (get(i / 8).toInt() shr (7 - i % 8)) and 1
