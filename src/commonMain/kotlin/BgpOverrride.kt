@@ -52,11 +52,11 @@ fun parsePrefixOrNull(s: String): IpAddressPrefix? {
 
 fun ByteArray.bitAt(i: Int) = (get(i / 8).toInt() shr (7 - i % 8)) and 1
 
-fun BgpState.applyOverrides(overrides: List<BgpOverride<IpAddressPrefix>>): BgpState {
+fun BgpState.applyOverrides(overrides: List<BgpOverride<IpAddressPrefix>>, communities: BgpCommunities): BgpState {
     val bt = prefixes.toBitTrie()
     for ((op, prefix) in overrides) when(op) {
-        BgpOverrideOp.PLUS -> bt.add(prefix)
+        BgpOverrideOp.PLUS -> bt.set(prefix, communities)
         BgpOverrideOp.MINUS -> bt.remove(prefix)
     }
-    return BgpState(bt.toSet(), attributes)
+    return BgpState(bt.toMap())
 }

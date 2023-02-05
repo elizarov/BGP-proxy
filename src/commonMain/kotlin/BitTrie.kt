@@ -1,47 +1,51 @@
 class BitTrie {
     private val root = Node()
 
-    fun add(prefix: IpAddressPrefix) {
+    fun set(prefix: IpAddressPrefix, communities: BgpCommunities) {
         var cur = root
         val prev = ArrayList<Node>()
+        // Push down the trie, expanding as needed
         for (i in 0 until prefix.length) {
-            if (cur.present) return
+            if (cur.communities == communities) return
+            if (cur.communities != null) cur.expand()
             prev += cur
-            cur = cur[prefix.bitAt(i)]
+            cur = cur.getOrCreate(prefix.bitAt(i))
         }
+        // Add the current node
         cur.prefix = prefix
-        cur.markPresent(true)
-        var j = prev.lastIndex
-        while (j >= 0) {
-            val p = prev[j]
-            if (p.c0?.present != true || p.c1?.present != true) break
-            p.markPresent(true)
-            j--
+        cur.makeLeaf(communities)
+        // Combine up the trie all in the same community
+        for (i in prev.lastIndex downTo 0) {
+            val p = prev[i]
+            if (p.c0?.communities != communities || p.c1?.communities != communities) break
+            p.makeLeaf(communities)
         }
     }
 
     fun remove(prefix: IpAddressPrefix) {
         var cur = root
-        var present = false
+        val prev = ArrayList<Node>()
+        // Expand down the trie
         for (i in 0 until prefix.length) {
-            val bit = prefix.bitAt(i)
-            if (cur.present) present = true
-            if (present) {
-                cur.present = false
-                cur[1 - bit].markPresent(true)
-            }
-            cur = cur[bit]
+            if (cur.communities != null) cur.expand()
+            prev += cur
+            cur = cur.get(prefix.bitAt(i)) ?: return // was not present at all -- bail out
         }
-        cur.prefix = prefix
-        cur.markPresent(false)
-
+        // Drop extra nodes up the tree as needed
+        for (i in prev.lastIndex downTo 0) {
+            val p = prev[i]
+            val bit = prefix.bitAt(i)
+            p.set(bit, null)
+            val other = p.get(1 - bit)
+            if (other != null) break // the other branch is there
+        }
     }
 
-    fun toSet(): Set<IpAddressPrefix> {
-        val result = mutableSetOf<IpAddressPrefix>()
+    fun toMap(): Map<IpAddressPrefix, BgpCommunities> {
+        val result = LinkedHashMap<IpAddressPrefix, BgpCommunities>()
         fun scan(cur: Node, length: Int, bits: Int) {
-            if (cur.present) {
-                result += cur.prefix ?: IpAddressPrefix(length, bits)
+            cur.communities?.let { communities ->
+                result[cur.prefix ?: IpAddressPrefix(length, bits)] = communities
                 return
             }
             if (length == 32) return
@@ -56,20 +60,37 @@ class BitTrie {
         var c0: Node? = null,
         var c1: Node? = null,
         var prefix: IpAddressPrefix? = null,
-        var present: Boolean = false
+        var communities: BgpCommunities? = null // != null on all leaf nodes, except the root of empty trie
     ) {
-        operator fun get(bit: Int): Node = when(bit) {
-            0 -> c0 ?: Node().also { c0 = it }
-            1 -> c1 ?: Node().also { c1 = it }
+        fun get(bit: Int): Node? = when(bit) {
+            0 -> c0
+            1 -> c1
             else -> error("bit=$bit")
         }
 
-        fun markPresent(present: Boolean) {
-            this.present = present
+        fun set(bit: Int, node: Node?) = when(bit) {
+            0 -> c0 = node
+            1 -> c1 = node
+            else -> error("bit=$bit")
+        }
+
+        fun getOrCreate(bit: Int): Node = get(bit) ?: Node().also { set(bit, it) }
+
+        fun makeLeaf(communities: BgpCommunities) {
+            this.communities = communities
             c0 = null
             c1 = null
+        }
+
+        fun expand() {
+            check(c0 == null)
+            check(c1 == null)
+            c0 = Node(communities = communities)
+            c1 = Node(communities = communities)
+            communities = null
         }
     }
 }
 
-fun Set<IpAddressPrefix>.toBitTrie() = BitTrie().apply { forEach { add(it) } }
+fun Map<IpAddressPrefix, BgpCommunities>.toBitTrie() =
+    BitTrie().apply { forEach { set(it.key, it.value) } }

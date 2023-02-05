@@ -82,8 +82,9 @@ fun main(args: Array<String>) = runBlocking {
         combine(flows) { lists -> lists.flatMap { it } }
     }
     // combine remote & resolved overrides
+    val overrideCommunities = setOf(BgpCommunity(endpoint.autonomousSystem, 0u))
     val bgpState = combine(bgpRemoteState, resolvedOverrides) { remote, overrides ->
-        remote.applyOverrides(overrides)
+        remote.applyOverrides(overrides, overrideCommunities)
     }.stateIn(this)
     // process incoming connections
     val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT) { reuseAddress = true }
@@ -110,21 +111,30 @@ suspend fun handleClientConnection(log: Log, socket: Socket, bgpState: Flow<BgpS
         // send updates
         var lastState = BgpState()
         bgpState.collect { state ->
-            val update = state.diffFrom(lastState)
-            log("Sending updated state: $state ($update)")
-            val withdrawn = update.withdrawn.toMutableSet()
-            val reachable = update.reachable.toMutableSet()
-            while (withdrawn.isNotEmpty() || reachable.isNotEmpty()) {
+            val diff = state.diffFrom(lastState)
+            log("Sending updated state: $state ($diff)")
+            val withdrawnDeque = ArrayDeque(diff.withdrawn)
+            val reachableMap = diff.reachable.toMutableMap()
+            var reachableCommunities: BgpCommunities? = null
+            var reachableDeque = ArrayDeque<IpAddressPrefix>()
+            while (withdrawnDeque.isNotEmpty() || reachableDeque.isNotEmpty() || reachableMap.isNotEmpty()) {
                 var remBytes = 1000 // send at most 1k per message
-                val withdrawnPacket = composePrefixes(withdrawn, remBytes)
+                val withdrawnPacket = composePrefixes(withdrawnDeque, remBytes)
                 remBytes -= withdrawnPacket.remaining.toInt()
-                val reachablePacket = composePrefixes(reachable, remBytes)
-                val attributes = state.attributes
+                if (reachableDeque.isEmpty() && reachableMap.isNotEmpty()) {
+                    reachableCommunities = reachableMap.keys.first()
+                    reachableDeque = ArrayDeque(reachableMap.remove(reachableCommunities)!!)
+                }
+                val reachablePacket = composePrefixes(reachableDeque, remBytes)
+                val attributesPacket = composeAttributes(
+                    if (reachableCommunities != null && reachablePacket.isNotEmpty)
+                        createAttributes(endpoint, reachableCommunities) else emptyList()
+                )
                 connection.output.writeBgpMessage(BgpType.UPDATE) {
                     writeUShort(withdrawnPacket.remaining.toUShort())
                     writePacket(withdrawnPacket)
-                    writeUShort(attributes.bytes.size.toUShort())
-                    writeFully(attributes.bytes)
+                    writeUShort(attributesPacket.remaining.toUShort())
+                    writePacket(attributesPacket)
                     writePacket(reachablePacket)
                 }
             }
@@ -204,7 +214,7 @@ private fun CoroutineScope.parseIncomingUpdates(
                 val newState = bgpState.apply(update)
                 if (newState != bgpState) {
                     bgpState = newState
-                    log("Received updated state: $bgpState ($update)")
+                    log("Received and updated state to $bgpState ($update)")
                     send(bgpState)
                 }
             }
@@ -232,28 +242,26 @@ fun ByteReadPacket.readBpgUpdate(): BgpUpdate {
     val withdrawnRoutesLen = readUShort()
     val withdrawn = readPrefixes(withdrawnRoutesLen.toInt())
     val totalPathAttributeLength = readUShort()
-    val attributes = BgpAttributes(readBytes(totalPathAttributeLength.toInt()))
+    val attributes = readAttributes(totalPathAttributeLength.toInt())
     val reachable = readPrefixes(remaining.toInt())
     return BgpUpdate(withdrawn, reachable, attributes)
 }
 
-class IpAddress(val bytes: UByteArray) {
+class IpAddress(val bytes: ByteArray) {
     constructor(s: String) : this(
         s.split(".").also {
             check(it.size == 4) { "Address must be 'xxx.xxx.xxx.xxx' but found: $s" }
-        }.map { it.toUByte() }.toUByteArray()
+        }.map { it.toUByte().toByte() }.toByteArray()
     )
 
-    override fun toString(): String = bytes.joinToString(".")
+    override fun toString(): String = bytes.joinToString(".") { it.toUByte().toString() }
 }
-
-fun IpAddress(bytes: ByteArray) = IpAddress(bytes.toUByteArray())
 
 data class BgpEndpoint(
     val address: IpAddress,
     val autonomousSystem: UShort
 ) {
-    override fun toString(): String = "id=$address (AS=$autonomousSystem)"
+    override fun toString(): String = "AS$autonomousSystem $address"
 }
 
 suspend fun retryIndefinitely(log: Log, delay: Duration, action: suspend () -> Unit) {
@@ -298,7 +306,7 @@ suspend fun ByteWriteChannel.writeBgpMessage(type: BgpType, block: BytePacketBui
 }
 
 fun BytePacketBuilder.write(localAddress: IpAddress) {
-    for (i in 0..3) writeUByte(localAddress.bytes[i])
+    for (i in 0..3) writeByte(localAddress.bytes[i])
 }
 
 suspend fun ByteReadChannel.readBgpMessage(block: suspend ByteReadPacket.(BgpType) -> Unit) {

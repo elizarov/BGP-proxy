@@ -5,38 +5,72 @@ import io.ktor.utils.io.core.*
 data class BgpUpdate(
     val withdrawn: Set<IpAddressPrefix> = emptySet(),
     val reachable: Set<IpAddressPrefix> = emptySet(),
-    val attributes: BgpAttributes = BgpAttributes()
+    val attributes: BgpAttributes = emptyList()
 ) {
-    override fun toString(): String =
-        "withdrawn=${withdrawn.size}, reachable=${reachable.size}; attr=${attributes.bytes.size} bytes"
+    override fun toString(): String = buildString {
+        append("withdrawn ")
+        append(withdrawn.size)
+        append(", reachable ")
+        append(reachable.size)
+        if (attributes.isNotEmpty()) {
+            append(", attrs ")
+            append(attributes.joinToString(" "))
+        }
+    }
 }
 
 data class BgpState(
-    val prefixes: Set<IpAddressPrefix> = emptySet(),
-    val attributes: BgpAttributes = BgpAttributes()
+    val prefixes: Map<IpAddressPrefix, BgpCommunities> = emptyMap()
 ) {
     fun apply(update: BgpUpdate): BgpState {
-        val newPrefixes = prefixes.toMutableSet()
+        val newPrefixes = prefixes.toMutableMap()
         newPrefixes -= update.withdrawn
-        newPrefixes += update.reachable
-        return BgpState(newPrefixes, update.attributes.takeIf { !it.isEmpty() } ?: attributes)
+        if (update.reachable.isNotEmpty()) {
+            val communities = update.attributes.communities
+            for (prefix in update.reachable) newPrefixes[prefix] = communities
+        }
+        return BgpState(newPrefixes)
     }
 
-    fun diffFrom(lastState: BgpState): BgpUpdate =
-        BgpUpdate(
-            withdrawn = lastState.prefixes - prefixes,
-            reachable = prefixes - lastState.prefixes,
-            attributes
+    fun diffFrom(lastState: BgpState): BgpDiff {
+        val withdrawn = ArrayList<IpAddressPrefix>()
+        val reachable = HashMap<BgpCommunities, ArrayList<IpAddressPrefix>>()
+        for ((prefix, communities) in lastState.prefixes) {
+            if (prefixes[prefix] != communities) withdrawn += prefix
+        }
+        for ((prefix, communities) in prefixes) {
+            if (lastState.prefixes[prefix] != communities) reachable.getOrPut(communities) { ArrayList() } += prefix
+        }
+        return BgpDiff(
+            withdrawn = withdrawn,
+            reachable = reachable,
         )
+    }
 
-    override fun toString(): String = "${prefixes.size} prefixes"
+    private val communities: List<Pair<BgpCommunity, Int>> by lazy {
+        prefixes.values.asSequence().flatten().groupingBy { it }.eachCount().toList()
+    }
+
+    override fun toString(): String = buildString {
+        append(prefixes.size)
+        append(" prefixes")
+        if (communities.isNotEmpty()) {
+            append(", communities ")
+            append(communities.joinToString(" ") { "${it.first}(${it.second})" })
+        }
+    }
 }
 
-class BgpAttributes(val bytes: ByteArray = byteArrayOf()) {
-    fun isEmpty() = bytes.isEmpty()
-    override fun equals(other: Any?): Boolean = other is BgpAttributes && bytes.contentEquals(other.bytes)
-    override fun hashCode(): Int = bytes.contentHashCode()
-    override fun toString(): String = bytes.toHexString()
+data class BgpDiff(
+    val withdrawn: List<IpAddressPrefix>,
+    val reachable: Map<BgpCommunities, List<IpAddressPrefix>>
+) {
+    override fun toString(): String = buildString {
+        append("withdrawn ")
+        append(withdrawn.size)
+        append(", reachable ")
+        append(reachable.map { it.value.size }.sum())
+    }
 }
 
 fun ByteReadPacket.readPrefixes(totalLength: Int): Set<IpAddressPrefix> = buildSet {
@@ -51,18 +85,16 @@ fun ByteReadPacket.readPrefixes(totalLength: Int): Set<IpAddressPrefix> = buildS
     }
 }
 
-fun composePrefixes(set: MutableSet<IpAddressPrefix>, maxLength: Int) = buildPacket {
+fun composePrefixes(prefixes: ArrayDeque<IpAddressPrefix>, maxLength: Int) = buildPacket {
     var remBytes = maxLength
-    val composed = mutableSetOf<IpAddressPrefix>()
-    for (prefix in set) {
+    while (prefixes.isNotEmpty()) {
         if (remBytes <= 0) break
+        val prefix = prefixes.removeFirst()
         val length = prefix.length
         writeByte(length.toByte())
         for (i in 0 until prefix.nBytes) writeByte(prefix[i])
-        composed += prefix
         remBytes -= 1 + prefixBytes(length)
     }
-    set -= composed
 }
 
 sealed interface AddressRange
