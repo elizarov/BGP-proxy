@@ -1,10 +1,10 @@
 plugins {
     application
-    kotlin("multiplatform") version "1.7.20"
+    kotlin("multiplatform") version "1.8.0"
     id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
-val ktorVersion = "2.1.2"
+val ktorVersion = "2.2.3"
 
 repositories {
     mavenCentral()
