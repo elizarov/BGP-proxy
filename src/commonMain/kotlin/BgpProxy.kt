@@ -79,7 +79,11 @@ fun main(args: Array<String>) = runBlocking {
                 }
             }
         }
-        combine(flows) { lists -> lists.flatMap { it } }
+        if (flows.isEmpty()) {
+            flowOf(emptyList())
+        } else {
+            combine(flows) { lists -> lists.flatMap { it } }
+        }
     }
     // combine remote & resolved overrides
     val overrideCommunities = setOf(BgpCommunity(endpoint.autonomousSystem, 0u))
