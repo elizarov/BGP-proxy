@@ -48,7 +48,7 @@ data class BgpState(
     }
 
     private val communities: List<Pair<BgpCommunity, Int>> by lazy {
-        prefixes.values.asSequence().flatten().groupingBy { it }.eachCount().toList()
+        prefixes.values.asSequence().flatten().groupingBy { it }.eachCount().toList().sortedBy { it.first }
     }
 
     override fun toString(): String = buildString {
