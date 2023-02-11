@@ -86,9 +86,9 @@ fun main(args: Array<String>) = runBlocking {
         }
     }
     // combine remote & resolved overrides
-    val overrideCommunities = setOf(BgpCommunity(endpoint.autonomousSystem, 0u))
+    val overrideCommunity = BgpCommunity(endpoint.autonomousSystem, 0u)
     val bgpState = combine(bgpRemoteState, resolvedOverrides) { remote, overrides ->
-        remote.applyOverrides(overrides, overrideCommunities)
+        remote.applyOverrides(overrides, overrideCommunity)
     }.stateIn(this, SharingStarted.Lazily, BgpState())
     // process incoming connections
     val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT) { reuseAddress = true }

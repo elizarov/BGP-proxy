@@ -1,69 +1,70 @@
 class BitTrie {
     private val root = Node()
 
-    fun add(prefix: IpAddressPrefix, communities: BgpCommunities) {
+    // overrides set of communities for a given IP address prefix
+    fun set(prefix: IpAddressPrefix, communities: BgpCommunities) {
+        var cur = root
+        for (i in 0 until prefix.length) cur = cur.getOrCreate(prefix.bitAt(i))
+        cur.communities = communities
+        cur.prefix = prefix
+    }
+
+    // adds a community to all IP addresses with a given prefix
+    fun add(prefix: IpAddressPrefix, community: BgpCommunity) {
         var cur = root
         val prev = ArrayList<Node>()
-        // Push down the trie, expanding as needed
+        var lastCommunities: BgpCommunities? = null
         for (i in 0 until prefix.length) {
-            if (cur.communities == communities) return
-            if (cur.communities != null) cur.expand()
             prev += cur
+            if (cur.communities != null) lastCommunities = cur.communities
             cur = cur.getOrCreate(prefix.bitAt(i))
         }
-        // add to the current node
-        val topCommunities = cur.communities?.let { it + communities } ?: communities
-        cur.prefix = prefix
-        // Add to all the leaves below this node and merge on the way back all equal nodes
-        // addRec returns "true" if all communities below cur node are equal to topCommunities
-        fun addRec(cur: Node): Boolean {
-            if (cur.communities != null || (cur.c0 == null && cur.c1 == null)) {
-                // was leaf or new leaf
-                val newCommunities = cur.communities?.let { it + communities } ?: communities
-                cur.communities = newCommunities
-                return newCommunities == topCommunities
+        // Add at this and below this node and merge on the way back all equal nodes
+        fun addRec(cur: Node, lastCommunities: BgpCommunities?) {
+            val curCommunities = (cur.communities ?: lastCommunities)?.let { it + community } ?: setOf(community)
+            cur.communities = if (curCommunities == lastCommunities) null else curCommunities
+            cur.communities?.let { communities ->
+                cur.communities = communities + community
             }
-            // non-leaf
-            val same0 = cur.c0?.let { addRec(it) } ?: true
-            val same1 = cur.c1?.let { addRec(it) } ?: true
+            cur.c0?.let { addRec(it, curCommunities) }
+            cur.c1?.let { addRec(it, curCommunities) }
             cur.tryCombine()
-            return same0 && same1
         }
-        if (addRec(cur)) { // all the same downwards
-            cur.makeLeaf(topCommunities)
-        }
+        addRec(cur, lastCommunities)
+        cur.prefix = prefix
         // Combine up the trie all in the same community
         for (i in prev.lastIndex downTo 0) {
             if (!prev[i].tryCombine()) break
         }
     }
 
+    // remove the given prefix completely, so that it is not associated with any communities
     fun remove(prefix: IpAddressPrefix) {
         var cur = root
-        val prev = ArrayList<Node>()
+        var cc: BgpCommunities? = null
         // Expand down the trie
         for (i in 0 until prefix.length) {
-            if (cur.communities != null) cur.expand()
-            prev += cur
-            cur = cur.get(prefix.bitAt(i)) ?: return // was not present at all -- bail out
-        }
-        // Drop extra nodes up the tree as needed
-        for (i in prev.lastIndex downTo 0) {
-            val p = prev[i]
+            if (cur.communities != null) {
+                cc = cur.communities
+                cur.communities = null
+            }
             val bit = prefix.bitAt(i)
-            p.set(bit, null)
-            val other = p.get(1 - bit)
-            if (other != null) break // the other branch is there
+            if (cc != null) {
+                val c1 = cur.getOrCreate(1 - bit)
+                if (c1.communities == null) c1.communities = cc
+            }
+            cur = cur.get(bit) ?: return // is not present further down -- bail out
         }
+        cur.communities = null
+        cur.c0 = null
+        cur.c1 = null
     }
 
     fun toMap(): Map<IpAddressPrefix, BgpCommunities> {
         val result = LinkedHashMap<IpAddressPrefix, BgpCommunities>()
         fun scan(cur: Node, length: Int, bits: Int) {
             cur.communities?.let { communities ->
-                check(cur.c0 == null && cur.c1 == null)
                 result[cur.prefix ?: IpAddressPrefix(length, bits)] = communities
-                return
             }
             if (length == 32) return
             cur.c0?.let { scan(it, length + 1, bits) }
@@ -73,11 +74,15 @@ class BitTrie {
         return result
     }
 
+    /**
+     * Trie invariant: the set of communities that applies to a given IP address is the last
+     * non-null value of [communities] that was discovered while traversing the trie.
+     */
     private class Node(
         var c0: Node? = null,
         var c1: Node? = null,
         var prefix: IpAddressPrefix? = null,
-        var communities: BgpCommunities? = null // != null on all leaf nodes, except the root of empty trie
+        var communities: BgpCommunities? = null
     ) {
         fun get(bit: Int): Node? = when(bit) {
             0 -> c0
@@ -93,30 +98,19 @@ class BitTrie {
 
         fun getOrCreate(bit: Int): Node = get(bit) ?: Node().also { set(bit, it) }
 
-        fun makeLeaf(communities: BgpCommunities) {
-            this.communities = communities
-            c0 = null
-            c1 = null
-        }
-
+        // combine when both children have the same set of communities
         fun tryCombine(): Boolean {
-            val newCommunities = c0?.communities
-            if (newCommunities != null && c1?.communities == newCommunities) {
-                makeLeaf(newCommunities)
-                return true
-            }
-            return false
-        }
-
-        fun expand() {
-            check(c0 == null)
-            check(c1 == null)
-            c0 = Node(communities = communities)
-            c1 = Node(communities = communities)
-            communities = null
+            val c0 = c0 ?: return false
+            val c1 = c1 ?: return false
+            val cc = c0.communities ?: return false
+            if (c1.communities != cc) return false
+            communities = cc
+            c0.communities = null
+            c1.communities = null
+            return true
         }
     }
 }
 
 fun Map<IpAddressPrefix, BgpCommunities>.toBitTrie() =
-    BitTrie().apply { forEach { add(it.key, it.value) } }
+    BitTrie().apply { forEach { set(it.key, it.value) } }
