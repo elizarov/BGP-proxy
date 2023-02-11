@@ -35,8 +35,8 @@ data class BgpState(
     fun diffFrom(lastState: BgpState): BgpDiff {
         val withdrawn = ArrayList<IpAddressPrefix>()
         val reachable = HashMap<BgpCommunities, ArrayList<IpAddressPrefix>>()
-        for ((prefix, communities) in lastState.prefixes) {
-            if (prefixes[prefix] != communities) withdrawn += prefix
+        for ((prefix, _) in lastState.prefixes) {
+            if (prefixes[prefix] == null) withdrawn += prefix
         }
         for ((prefix, communities) in prefixes) {
             if (lastState.prefixes[prefix] != communities) reachable.getOrPut(communities) { ArrayList() } += prefix
