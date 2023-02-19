@@ -2,6 +2,8 @@
 
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.TimeSource.*
@@ -18,16 +20,16 @@ private val keepAlive = 1.hours
 private val stopAfter = 10.seconds
 
 class HostResolver {
-    private val ioDispatcher = newSingleThreadContext("ResolverIO")
-    private val mainDispatcher = newSingleThreadContext("ResolverMain")
-    private val mainScope = CoroutineScope(SupervisorJob() + mainDispatcher)
-    // mutations are confined to mainDispatcher thread
+    private val dispatcher = newSingleThreadContext("Resolver")
+    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    private val mutex = Mutex()
+    // mutations are protected with mutex
     private val flows = HashMap<String, Flow<List<IpAddressPrefix>>>()
     private val log = Log("resolve")
 
-    suspend fun resolveFlow(host: String): Flow<List<IpAddressPrefix>> = withContext(mainDispatcher) {
+    suspend fun resolveFlow(host: String): Flow<List<IpAddressPrefix>> = mutex.withLock {
         flows.getOrPut(host) {
-            newResolveFlow(host).stateIn(mainScope, SharingStarted.WhileSubscribed(stopAfter), emptyList())
+            newResolveFlow(host).stateIn(scope, SharingStarted.WhileSubscribed(stopAfter), emptyList())
         }
     }
 
@@ -36,7 +38,7 @@ class HostResolver {
         var lastResult = emptyList<IpAddressPrefix>()
         var lastError: String? = null
         while (true) {
-            val result = withContext(ioDispatcher) { resolveHostAddr(host) }
+            val result = resolveHostAddr(host)
             val now = Monotonic.markNow()
             when (result) {
                 is ResolveResult.Err -> {
