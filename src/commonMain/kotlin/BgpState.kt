@@ -7,16 +7,11 @@ data class BgpUpdate(
     val reachable: Set<IpAddressPrefix> = emptySet(),
     val attributes: BgpAttributes = emptyList()
 ) {
-    override fun toString(): String = buildString {
-        append("withdrawn ")
-        append(withdrawn.size)
-        append(", reachable ")
-        append(reachable.size)
-        if (attributes.isNotEmpty()) {
-            append(", attrs ")
-            append(attributes.joinToString(" "))
-        }
-    }
+    override fun toString(): String = buildList {
+        if (withdrawn.isNotEmpty()) add("withdrawn ${withdrawn.size}")
+        if (reachable.isNotEmpty()) add("reachable ${reachable.size}")
+        if (attributes.isNotEmpty()) add("attrs ${attributes.joinToString(" ")}")
+    }.joinToString(", ")
 }
 
 data class BgpState(
@@ -53,9 +48,9 @@ data class BgpState(
 
     override fun toString(): String = buildString {
         append(prefixes.size)
-        append(" prefixes")
+        append(" IPs")
         if (communities.isNotEmpty()) {
-            append(", communities ")
+            append(" from ")
             append(communities.joinToString(" ") { "${it.first}(${it.second})" })
         }
     }
@@ -65,12 +60,10 @@ data class BgpDiff(
     val withdrawn: List<IpAddressPrefix>,
     val reachable: Map<BgpCommunities, List<IpAddressPrefix>>
 ) {
-    override fun toString(): String = buildString {
-        append("withdrawn ")
-        append(withdrawn.size)
-        append(", reachable ")
-        append(reachable.map { it.value.size }.sum())
-    }
+    override fun toString(): String = buildList {
+        if (withdrawn.isNotEmpty()) add("withdrawn ${withdrawn.size}")
+        if (reachable.isNotEmpty()) add("reachable ${reachable.map { it.value.size }.sum()}")
+    }.joinToString(", ")
 }
 
 fun ByteReadPacket.readPrefixes(totalLength: Int): Set<IpAddressPrefix> = buildSet {

@@ -116,7 +116,7 @@ suspend fun handleClientConnection(log: Log, socket: Socket, bgpState: Flow<BgpS
         var lastState = BgpState()
         bgpState.collect { state ->
             val diff = state.diffFrom(lastState)
-            log("Sending updated state: $state ($diff)")
+            log("Sending state: $state ($diff)")
             val withdrawnDeque = ArrayDeque(diff.withdrawn)
             val reachableMap = diff.reachable.toMutableMap()
             var reachableCommunities: BgpCommunities? = null
@@ -218,7 +218,7 @@ private fun CoroutineScope.parseIncomingUpdates(
                 val newState = bgpState.apply(update)
                 if (newState != bgpState) {
                     bgpState = newState
-                    log("Received and updated state to $bgpState ($update)")
+                    log("Updated state: $bgpState ($update)")
                     send(bgpState)
                 }
             }
