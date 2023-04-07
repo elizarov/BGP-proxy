@@ -4,9 +4,9 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
-import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Duration.Companion.hours
-import kotlin.time.TimeSource.*
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.TimeSource.Monotonic
 
 sealed class ResolveResult {
     data class Ok(val list: List<IpAddressPrefix>) : ResolveResult()
@@ -19,9 +19,9 @@ private val resolveAgain = 1.seconds
 private val keepAlive = 1.hours
 private val stopAfter = 10.seconds
 
-class HostResolver {
+class HostResolver(coroutineScope: CoroutineScope) {
     private val dispatcher = newSingleThreadContext("Resolver")
-    private val scope = CoroutineScope(SupervisorJob() + dispatcher)
+    private val scope = coroutineScope + dispatcher
     private val mutex = Mutex()
     // mutations are protected with mutex
     private val flows = HashMap<String, Flow<List<IpAddressPrefix>>>()

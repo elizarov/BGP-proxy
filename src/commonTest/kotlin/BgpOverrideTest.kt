@@ -4,14 +4,15 @@ import kotlin.test.assertEquals
 class BgpOverrideTest {
     @Test
     fun testParseFile() {
-        val (overrides, errors) = parseOverrideFile("bgp-proxy.override.txt")
+        val (items, errors) = parseConfigFile("bgp-proxy.cfg")
         assertEquals(0, errors.size, errors.toString())
-        val expectedOverrides = listOf(
-            BgpOverride(BgpOverrideOp.MINUS, IpAddressPrefix(16, byteArrayOf(192.toByte(), 168.toByte()))),
-            BgpOverride(BgpOverrideOp.PLUS, IpAddressPrefix(32, byteArrayOf(1, 1, 1, 1))),
-            BgpOverride(BgpOverrideOp.PLUS, HostName("pbs.twimg.com")),
-            BgpOverride(BgpOverrideOp.MINUS, HostName("qwerty"))
+        val expectedItems = listOf(
+            BgpConfigItem(BgpConfigOp.PLUS, BgpRemoteSource("antifilter.download")),
+            BgpConfigItem(BgpConfigOp.MINUS, IpAddressPrefix(16, byteArrayOf(192.toByte(), 168.toByte()))),
+            BgpConfigItem(BgpConfigOp.PLUS, IpAddressPrefix(32, byteArrayOf(1, 1, 1, 1))),
+            BgpConfigItem(BgpConfigOp.PLUS, HostName("pbs.twimg.com")),
+            BgpConfigItem(BgpConfigOp.MINUS, HostName("qwerty"))
         )
-        assertEquals(expectedOverrides, overrides)
+        assertEquals(expectedItems, items)
     }
 }

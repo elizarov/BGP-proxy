@@ -9,8 +9,10 @@ class BitTrie {
         cur.prefix = prefix
     }
 
-    // adds a community to all IP addresses with a given prefix
-    fun add(prefix: IpAddressPrefix, community: BgpCommunity) {
+    fun add(prefix: IpAddressPrefix, addCommunity: BgpCommunity) = add(prefix, setOf(addCommunity))
+
+    // adds communities to all IP addresses with a given prefix
+    fun add(prefix: IpAddressPrefix, addCommunities: BgpCommunities) {
         var cur = root
         val prev = ArrayList<Node>()
         var lastCommunities: BgpCommunities? = null
@@ -21,10 +23,10 @@ class BitTrie {
         }
         // Add at this and below this node and merge on the way back all equal nodes
         fun addRec(cur: Node, lastCommunities: BgpCommunities?) {
-            val curCommunities = (cur.communities ?: lastCommunities)?.let { it + community } ?: setOf(community)
+            val curCommunities = (cur.communities ?: lastCommunities)?.let { it + addCommunities } ?: addCommunities
             cur.communities = if (curCommunities == lastCommunities) null else curCommunities
             cur.communities?.let { communities ->
-                cur.communities = communities + community
+                cur.communities = communities + addCommunities
             }
             cur.c0?.let { addRec(it, curCommunities) }
             cur.c1?.let { addRec(it, curCommunities) }
@@ -111,6 +113,3 @@ class BitTrie {
         }
     }
 }
-
-fun Map<IpAddressPrefix, BgpCommunities>.toBitTrie() =
-    BitTrie().apply { forEach { set(it.key, it.value) } }

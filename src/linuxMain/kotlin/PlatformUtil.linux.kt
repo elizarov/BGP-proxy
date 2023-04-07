@@ -1,8 +1,13 @@
 @file:OptIn(ExperimentalCoroutinesApi::class)
 
 import io.ktor.utils.io.errors.*
-import kotlinx.cinterop.*
-import kotlinx.coroutines.*
+import kotlinx.cinterop.alloc
+import kotlinx.cinterop.memScoped
+import kotlinx.cinterop.ptr
+import kotlinx.cinterop.readBytes
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.newSingleThreadContext
 import platform.posix.*
 
 actual fun createSelectorDispatcher(): CoroutineDispatcher =

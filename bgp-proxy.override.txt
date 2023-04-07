@@ -1,6 +1,0 @@
-# Test/example for override file
-
-- 192.168.0.0/16   # withdrawn prefix
-+ 1.1.1.1          # reachable prefix (default to /32)
-+ pbs.twimg.com    # reachable host name with complex resolve
-- qwerty           # invalid host name
