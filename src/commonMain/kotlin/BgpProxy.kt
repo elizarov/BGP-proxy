@@ -6,7 +6,11 @@ import io.ktor.utils.io.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-data class ResolvedConfigPrefixes(val op: ConfigOp, val prefixes: Map<IpAddressPrefix, BgpCommunities>)
+data class ResolvedConfigPrefixes(
+    val op: ConfigOp,
+    val prefixes: Map<IpAddressPrefix, BgpCommunities>,
+    val bgpSource: Boolean = false
+)
 
 fun main(args: Array<String>) = runBlocking {
     if (args.size != 3) {
@@ -38,7 +42,7 @@ fun main(args: Array<String>) = runBlocking {
                     ResolvedConfigPrefixes(op, list.associateWith { localCommunities })
                 }
                 is BgpRemoteSource -> bgpClientManager.clientFlow(addressRange.host).map { bgpState ->
-                    ResolvedConfigPrefixes(op, bgpState.prefixes)
+                    ResolvedConfigPrefixes(op, bgpState.prefixes, bgpSource = true)
                 }
             }
         }
@@ -48,10 +52,10 @@ fun main(args: Array<String>) = runBlocking {
             // Combine all configuration items into a single state
             combine(flows) { list ->
                 val bt = BitTrie()
-                for ((op, prefixes) in list) {
+                for ((op, prefixes, bgpSource) in list) {
                     for ((prefix, communities) in prefixes) {
                         when (op) {
-                            ConfigOp.PLUS -> bt.add(prefix, communities)
+                            ConfigOp.PLUS -> if (bgpSource) bt.set(prefix, communities) else bt.add(prefix, communities)
                             ConfigOp.MINUS -> bt.remove(prefix)
                         }
                     }
