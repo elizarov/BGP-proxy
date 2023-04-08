@@ -4,7 +4,7 @@ plugins {
     id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
-val ktorVersion = "2.2.3"
+val ktorVersion = "2.2.4"
 
 repositories {
     mavenCentral()
