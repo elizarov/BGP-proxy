@@ -6,7 +6,7 @@ import io.ktor.utils.io.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 
-data class ResolvedPrefix(val address: IpAddressPrefix, val communities: BgpCommunities)
+data class ResolvedConfigPrefixes(val op: ConfigOp, val prefixes: Map<IpAddressPrefix, BgpCommunities>)
 
 fun main(args: Array<String>) = runBlocking {
     if (args.size != 3) {
@@ -24,43 +24,41 @@ fun main(args: Array<String>) = runBlocking {
     val selectorManager = SelectorManager(createSelectorDispatcher())
     val bgpClientManager = BgpClientManager(this, endpoint, selectorManager)
     val hostResolver = HostResolver(this)
-    val bgpConfig = launchConfigLoader(configFile)
     val localCommunities = setOf(BgpCommunity(endpoint.autonomousSystem, 0u))
 
-    // resolve configuration
-    val resolvedConfig = bgpConfig.flatMapLatest { overrides ->
-        val flows = overrides.map { (op, addressRange) ->
+    // resolve configuration and transform resolved config into BpgState
+    val bgpState = launchConfigLoader(configFile).flatMapLatest { config ->
+        val flows = config.map { (op, addressRange) ->
+            // Resolve configuration items based on their type
             when (addressRange) {
-                is IpAddressPrefix -> flowOf(listOf(
-                    BgpConfigItem(op, ResolvedPrefix(addressRange, localCommunities))
-                ))
-                is HostName -> hostResolver.resolveFlow(addressRange.host).map { list ->
-                    list.map { prefix ->
-                        BgpConfigItem(op, ResolvedPrefix(prefix, localCommunities))
-                    }
+                is IpAddressPrefix -> flowOf(
+                    ResolvedConfigPrefixes(op, mapOf(addressRange to localCommunities))
+                )
+                is DnsHostName -> hostResolver.resolveFlow(addressRange.host).map { list ->
+                    ResolvedConfigPrefixes(op, list.associateWith { localCommunities })
                 }
-                is BgpRemoteSource -> bgpClientManager.resolveClient(addressRange.host).map { bgpState ->
-                    bgpState.prefixes.entries.map { (prefix, communities) ->
-                        BgpConfigItem(op, ResolvedPrefix(prefix, communities))
-                    }
+                is BgpRemoteSource -> bgpClientManager.clientFlow(addressRange.host).map { bgpState ->
+                    ResolvedConfigPrefixes(op, bgpState.prefixes)
                 }
             }
         }
         if (flows.isEmpty()) {
-            flowOf(emptyList())
+            flowOf(BgpState())
         } else {
-            combine(flows) { lists -> lists.flatMap { it } }
+            // Combine all configuration items into a single state
+            combine(flows) { list ->
+                val bt = BitTrie()
+                for ((op, prefixes) in list) {
+                    for ((prefix, communities) in prefixes) {
+                        when (op) {
+                            ConfigOp.PLUS -> bt.add(prefix, communities)
+                            ConfigOp.MINUS -> bt.remove(prefix)
+                        }
+                    }
+                }
+                BgpState(bt.toMap())
+            }
         }
-    }
-
-    // Transform resolved config into bpgState
-    val bgpState = resolvedConfig.map { config ->
-        val bt = BitTrie()
-        for ((op, prefix) in config) when(op) {
-            BgpConfigOp.PLUS -> bt.add(prefix.address, prefix.communities)
-            BgpConfigOp.MINUS -> bt.remove(prefix.address)
-        }
-        BgpState(bt.toMap())
     }.stateIn(this, SharingStarted.Eagerly, BgpState())
 
     // process incoming connections

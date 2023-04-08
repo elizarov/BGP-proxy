@@ -12,6 +12,8 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.time.Duration.Companion.seconds
 
+private val initialUpdateDuration = 3.seconds
+private val connectionRetryDuration = 3.seconds
 private val keepConnectionDuration = 3.seconds
 
 class BgpClientManager(
@@ -20,17 +22,17 @@ class BgpClientManager(
     private val selectorManager: SelectorManager
 ) {
     private val mutex = Mutex()
-    private val flows = HashMap<String, StateFlow<BgpState>>()
+    private val flows = HashMap<String, Flow<BgpState>>()
 
-    suspend fun resolveClient(remoteAddress: String): Flow<BgpState> = mutex.withLock {
+    suspend fun clientFlow(remoteAddress: String): Flow<BgpState> = mutex.withLock {
         flows.getOrPut(remoteAddress) {
-            bgpClientFlow(selectorManager, endpoint, remoteAddress)
+            newClientFlow(selectorManager, endpoint, remoteAddress)
                 .stateIn(coroutineScope, SharingStarted.WhileSubscribed(keepConnectionDuration), BgpState())
         }
     }
 }
 
-private fun bgpClientFlow(selectorManager: SelectorManager, endpoint: BgpEndpoint, remoteAddress: String) = flow {
+private fun newClientFlow(selectorManager: SelectorManager, endpoint: BgpEndpoint, remoteAddress: String) = flow {
     val log = Log("uplink-$remoteAddress")
     retryIndefinitely(log, connectionRetryDuration) {
         emitAll(connectToRemote(log, selectorManager, remoteAddress, endpoint))

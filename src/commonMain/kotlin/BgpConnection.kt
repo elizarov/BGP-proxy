@@ -11,10 +11,6 @@ const val BGP_PORT = 179
 const val BGP_VERSION: Byte = 4
 const val HOLD_TIME: UShort = 240u
 
-val connectionRetryDuration = 3.seconds
-val initialUpdateDuration = 3.seconds
-val fileRescanDuration = 1.seconds
-
 val BGP_MARKER = UByteArray(16) { 0xffu }
 
 enum class BgpType(val tag: Byte) { OPEN(1), UPDATE(2), NOTIFICATION(3), KEEP_ALIVE(4) }

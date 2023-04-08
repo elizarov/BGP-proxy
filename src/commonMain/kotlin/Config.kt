@@ -2,11 +2,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlin.time.Duration.Companion.seconds
+
+private val fileRescanDuration = 1.seconds
 
 sealed interface ConfigSource
 
 data class BgpRemoteSource(val host: String) : ConfigSource
-data class HostName(val host: String) : ConfigSource
+data class DnsHostName(val host: String) : ConfigSource
 
 class IpAddressPrefix(
     val length: Int = 32,
@@ -45,27 +48,27 @@ fun IpAddressPrefix(length: Int = 32, prefix: ByteArray): IpAddressPrefix {
 
 fun prefixBytes(length: Int) = (length + 7) / 8
 
-enum class BgpConfigOp { PLUS, MINUS }
+enum class ConfigOp { PLUS, MINUS }
 
-data class BgpConfigItem<T>(val op: BgpConfigOp, val source: T)
+data class ConfigItem<T : ConfigSource>(val op: ConfigOp, val source: T)
 
-data class BgpConfigParseResult(
-    val items: List<BgpConfigItem<ConfigSource>> = emptyList(),
+data class ConfigParseResult(
+    val items: List<ConfigItem<ConfigSource>> = emptyList(),
     val errors: List<String> = emptyList()
 )
 
-fun parseConfigFile(configFile: String): BgpConfigParseResult {
+fun parseConfigFile(configFile: String): ConfigParseResult {
     val lines = readFileBytesCatching(configFile)
-        .getOrElse { ex -> return BgpConfigParseResult(errors = listOf(ex.toString())) }
+        .getOrElse { ex -> return ConfigParseResult(errors = listOf(ex.toString())) }
         .decodeToString().split("\n")
-    val items = ArrayList<BgpConfigItem<ConfigSource>>()
+    val items = ArrayList<ConfigItem<ConfigSource>>()
     val errors = ArrayList<String>()
     for ((index, line0) in lines.withIndex()) {
         val line = line0.substringBefore('#').trim()
         if (line.isEmpty()) continue
         val op = when (line[0]) {
-            '+' -> BgpConfigOp.PLUS
-            '-' -> BgpConfigOp.MINUS
+            '+' -> ConfigOp.PLUS
+            '-' -> ConfigOp.MINUS
             else -> {
                 errors += "Line ${index + 1}: Invalid operation '$line'"
                 continue
@@ -78,17 +81,17 @@ fun parseConfigFile(configFile: String): BgpConfigParseResult {
         ).trim()
         val source: ConfigSource? = when (sourceType.lowercase()) {
             "bgp" -> BgpRemoteSource(sourceSpec)
+            "dns" -> DnsHostName(sourceSpec)
             "ip" -> parsePrefixOrNull(sourceSpec)
-            "dns" -> HostName(sourceSpec)
             else -> null
         }
         if (source == null) {
             errors += "Line ${index + 1}: Invalid source '$sourceSpec'"
             continue
         }
-        items += BgpConfigItem(op, source)
+        items += ConfigItem(op, source)
     }
-    return BgpConfigParseResult(items, errors)
+    return ConfigParseResult(items, errors)
 }
 
 fun parsePrefixOrNull(s: String): IpAddressPrefix? {
@@ -102,8 +105,8 @@ fun parsePrefixOrNull(s: String): IpAddressPrefix? {
     return IpAddressPrefix(length, ip.copyOf(needBytes))
 }
 
-fun CoroutineScope.launchConfigLoader(configFile: String): StateFlow<List<BgpConfigItem<ConfigSource>>> {
-    val bgpConfig = MutableStateFlow(emptyList<BgpConfigItem<ConfigSource>>())
+fun CoroutineScope.launchConfigLoader(configFile: String): StateFlow<List<ConfigItem<ConfigSource>>> {
+    val bgpConfig = MutableStateFlow(emptyList<ConfigItem<ConfigSource>>())
     // launch config file tracker
     val log = Log("config")
     launch {
@@ -122,8 +125,8 @@ fun CoroutineScope.launchConfigLoader(configFile: String): StateFlow<List<BgpCon
     launch {
         bgpConfig.collect { items ->
             log("configured ${items.size} sources " +
-                    "(+${items.count { it.op == BgpConfigOp.PLUS}} " +
-                    "-${items.count { it.op == BgpConfigOp.MINUS}})")
+                    "(+${items.count { it.op == ConfigOp.PLUS}} " +
+                    "-${items.count { it.op == ConfigOp.MINUS}})")
         }
     }
     return bgpConfig
