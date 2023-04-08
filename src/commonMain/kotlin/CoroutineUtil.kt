@@ -1,4 +1,3 @@
-import io.ktor.utils.io.errors.*
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.delay
@@ -19,7 +18,7 @@ inline fun catchAndLogErrors(log: Log, action: () -> Unit) {
         throw e
     } catch (e: Throwable) {
         log("Error: ${e.message}")
-        if (e !is ClosedReceiveChannelException && e !is IllegalStateException && e !is IOException) {
+        if (e !is ClosedReceiveChannelException && e !is IllegalStateException && !isIoException(e)) {
             e.printStackTrace()
         }
     }

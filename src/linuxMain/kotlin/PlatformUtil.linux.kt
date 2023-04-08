@@ -49,3 +49,6 @@ actual fun readFileBytesCatching(file: String): Result<ByteArray> {
     }
     return Result.success(res)
 }
+
+actual fun isIoException(e: Throwable): Boolean =
+    e is IOException || e is PosixException
