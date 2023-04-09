@@ -61,7 +61,10 @@ suspend fun maintainBgpConnection(
     onActive(connection)
 }
 
-suspend fun ByteReadChannel.parseBgpMessages(onUpdate: suspend ByteReadPacket.() -> Unit = {}) {
+// Workaround for https://youtrack.jetbrains.com/issue/KT-57875
+suspend fun ByteReadChannel.parseBgpMessages() = parseBgpMessages {}
+
+suspend fun ByteReadChannel.parseBgpMessages(onUpdate: suspend ByteReadPacket.() -> Unit) {
     while (true) {
         readBgpMessage { type ->
             when (type) {
