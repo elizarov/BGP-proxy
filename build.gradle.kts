@@ -9,13 +9,13 @@ repositories {
 }
 
 kotlin {
-    targets {
-        jvm { withJava() }
-        linuxX64("linux") {
-            binaries {
-                executable("bgpProxy", listOf(RELEASE)) {
-                    baseName = "bgp-proxy"
-                }
+    jvm {
+        withJava()
+    }
+    linuxX64 {
+        binaries {
+            executable("bgpProxy", listOf(RELEASE)) {
+                baseName = "bgp-proxy"
             }
         }
     }
