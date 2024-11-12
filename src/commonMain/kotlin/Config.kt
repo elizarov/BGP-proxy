@@ -18,7 +18,7 @@ data class DnsHostName(val host: String) : ConfigSource
 class IpAddressPrefix(
     val length: Int = 32,
     val bits: Int
-) : ConfigSource {
+) : ConfigSource, Comparable<IpAddressPrefix> {
     init {
         val mask = (1 shl (32 - length)) - 1
         check(bits and mask == 0)
@@ -38,6 +38,10 @@ class IpAddressPrefix(
     override fun equals(other: Any?): Boolean =
         other is IpAddressPrefix && other.length == length && other.bits == bits
     override fun hashCode(): Int = length * 31 + bits
+    override fun compareTo(other: IpAddressPrefix): Int {
+        if (length != other.length) return length - other.length
+        return bits.toUInt().compareTo(other.bits.toUInt())
+    }
 }
 
 fun IpAddressPrefix(length: Int = 32, prefix: ByteArray): IpAddressPrefix {

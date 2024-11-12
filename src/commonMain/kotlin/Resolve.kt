@@ -50,13 +50,39 @@ class HostResolver(coroutineScope: CoroutineScope) {
                 is ResolveResult.Ok -> for (address in result.list) known[address] = now
             }
             known.values.removeAll { mark -> mark.elapsedNow() > keepAlive }
-            val current = known.keys.toList()
+            val current = known.keys.sorted()
             if (current != lastResult) {
-                log("$host -> ${current.joinToString(", ")}")
+                val added = current.minus(lastResult)
+                val removed = lastResult.minus(current)
+                buildString {
+                    append(host)
+                    append(":")
+                    if (added.isNotEmpty()) {
+                        append(" (+) ")
+                        appendForLog(added)
+                    }
+                    if (removed.isNotEmpty()) {
+                        append(" (-) ")
+                        appendForLog(removed)
+                    }
+                    append(" = ")
+                    append(current.size)
+                    append(" IPs")
+                }.let { log(it) }
                 emit(current)
                 lastResult = current
             }
             delay(resolveAgain)
         }
+    }
+}
+
+private fun StringBuilder.appendForLog(list: List<IpAddressPrefix>) {
+    val maxN = 2
+    append(list.take(maxN).joinToString(", "))
+    if (list.size > maxN) {
+        append(", ")
+        append(list.size - maxN)
+        append(" more")
     }
 }
