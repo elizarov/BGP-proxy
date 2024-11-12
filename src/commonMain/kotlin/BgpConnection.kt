@@ -12,6 +12,7 @@ const val BGP_PORT = 179
 const val BGP_VERSION: Byte = 4
 const val HOLD_TIME: UShort = 240u
 
+@OptIn(ExperimentalUnsignedTypes::class)
 val BGP_MARKER = UByteArray(16) { 0xffu }.toByteArray()
 
 enum class BgpType(val tag: Byte) { OPEN(1), UPDATE(2), NOTIFICATION(3), KEEP_ALIVE(4) }
