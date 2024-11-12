@@ -67,7 +67,9 @@ data class ConfigParseResult(
 
 fun parseConfigFile(configFile: String): ConfigParseResult {
     val lines =
-        runCatching { SystemFileSystem.source(Path(configFile)).buffered().readByteArray() }
+        runCatching {
+            SystemFileSystem.source(Path(configFile)).buffered().use { it.readByteArray() }
+        }
         .getOrElse { ex -> return ConfigParseResult(errors = listOf(ex.toString())) }
         .decodeToString().split("\n")
     val items = ArrayList<ConfigItem<ConfigSource>>()
