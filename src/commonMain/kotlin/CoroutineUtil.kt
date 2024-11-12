@@ -1,6 +1,7 @@
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.ClosedReceiveChannelException
 import kotlinx.coroutines.delay
+import kotlinx.io.IOException
 import kotlin.time.Duration
 
 suspend fun retryIndefinitely(log: Log, delay: Duration, action: suspend () -> Unit) {
@@ -18,7 +19,7 @@ inline fun catchAndLogErrors(log: Log, action: () -> Unit) {
         throw e
     } catch (e: Throwable) {
         log("Error: ${e.message}")
-        if (e !is ClosedReceiveChannelException && e !is IllegalStateException && !isIoException(e)) {
+        if (e !is ClosedReceiveChannelException && e !is IllegalStateException && e !is IOException) {
             e.printStackTrace()
         }
     }

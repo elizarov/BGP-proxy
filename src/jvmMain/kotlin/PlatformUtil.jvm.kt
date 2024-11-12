@@ -1,7 +1,5 @@
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
-import java.io.File
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.*
 
@@ -10,9 +8,3 @@ actual fun createSelectorDispatcher(): CoroutineDispatcher =
 
 actual fun currentTimestamp(): String =
     SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS").format(Date())
-
-actual fun readFileBytesCatching(file: String): Result<ByteArray> =
-    runCatching { File(file).readBytes() }
-
-actual fun isIoException(e: Throwable): Boolean =
-    e is IOException

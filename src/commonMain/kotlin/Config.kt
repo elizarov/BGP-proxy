@@ -2,6 +2,10 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
+import kotlinx.io.buffered
+import kotlinx.io.files.Path
+import kotlinx.io.files.SystemFileSystem
+import kotlinx.io.readByteArray
 import kotlin.time.Duration.Companion.seconds
 
 private val fileRescanDuration = 1.seconds
@@ -58,7 +62,8 @@ data class ConfigParseResult(
 )
 
 fun parseConfigFile(configFile: String): ConfigParseResult {
-    val lines = readFileBytesCatching(configFile)
+    val lines =
+        runCatching { SystemFileSystem.source(Path(configFile)).buffered().readByteArray() }
         .getOrElse { ex -> return ConfigParseResult(errors = listOf(ex.toString())) }
         .decodeToString().split("\n")
     val items = ArrayList<ConfigItem<ConfigSource>>()
