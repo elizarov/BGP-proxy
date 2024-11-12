@@ -1,7 +1,5 @@
 plugins {
-    application
     kotlin("multiplatform") version "2.0.21"
-    id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
 val ktorVersion = "3.0.1"
@@ -39,14 +37,6 @@ java {
     toolchain {
         languageVersion.set(JavaLanguageVersion.of(21))
     }
-}
-
-application {
-    mainClass.set("BgpProxyKt")
-}
-
-tasks.shadowJar {
-    archiveBaseName.set("bgp-proxy")
 }
 
 
