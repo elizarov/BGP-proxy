@@ -1,10 +1,10 @@
 plugins {
     application
-    kotlin("multiplatform") version "1.8.20"
+    kotlin("multiplatform") version "2.0.21"
     id("com.github.johnrengelman.shadow") version "7.1.2"
 }
 
-val ktorVersion = "2.2.4"
+val ktorVersion = "3.0.1"
 
 repositories {
     mavenCentral()
@@ -33,19 +33,11 @@ kotlin {
             }
         }
     }
-
-    sourceSets.all {
-        languageSettings.apply {
-            optIn("kotlin.RequiresOptIn")
-            optIn("kotlin.ExperimentalUnsignedTypes")
-            optIn("kotlin.time.ExperimentalTime")
-        }
-    }
 }
 
 java {
     toolchain {
-        languageVersion.set(JavaLanguageVersion.of(17))
+        languageVersion.set(JavaLanguageVersion.of(21))
     }
 }
 

@@ -1,3 +1,4 @@
+import io.ktor.utils.io.core.remaining
 import kotlin.test.Test
 import kotlin.test.assertEquals
 

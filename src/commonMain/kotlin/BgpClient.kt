@@ -39,7 +39,7 @@ private fun newClientFlow(selectorManager: SelectorManager, endpoint: BgpEndpoin
     }
 }
 
-private suspend fun connectToRemote(
+private fun connectToRemote(
     log: Log,
     selectorManager: SelectorManager,
     remoteAddress: String,

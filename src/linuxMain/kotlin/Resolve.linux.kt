@@ -1,3 +1,5 @@
+@file:OptIn(ExperimentalForeignApi::class)
+
 import kotlinx.cinterop.*
 import platform.posix.*
 

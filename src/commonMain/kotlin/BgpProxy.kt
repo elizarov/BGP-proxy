@@ -5,6 +5,7 @@ import io.ktor.network.sockets.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
+import kotlinx.io.writeUShort
 
 data class ResolvedConfigPrefixes(
     val op: ConfigOp,
@@ -91,7 +92,7 @@ private suspend fun handleClientConnection(log: Log, socket: Socket, bgpState: F
     maintainBgpConnection(log, socket, endpoint) {connection ->
         // parse all messages and ignore all incoming updates
         launch {
-            connection.input.parseBgpMessages()
+            connection.input.parseBgpMessages {}
         }
         // send updates
         var lastState = BgpState()
@@ -112,7 +113,7 @@ private suspend fun handleClientConnection(log: Log, socket: Socket, bgpState: F
                 }
                 val reachablePacket = composePrefixes(reachableDeque, remBytes)
                 val attributesPacket = composeAttributes(
-                    if (reachableCommunities != null && reachablePacket.isNotEmpty)
+                    if (reachableCommunities != null && !reachablePacket.exhausted())
                         createAttributes(endpoint, reachableCommunities) else emptyList()
                 )
                 connection.output.writeBgpMessage(BgpType.UPDATE) {

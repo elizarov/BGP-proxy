@@ -1,6 +1,7 @@
-@file:OptIn(ExperimentalUnsignedTypes::class)
-
 import io.ktor.utils.io.core.*
+import kotlinx.io.Source
+import kotlinx.io.readByteArray
+import kotlinx.io.readUByte
 
 data class BgpUpdate(
     val withdrawn: Set<IpAddressPrefix> = emptySet(),
@@ -66,19 +67,19 @@ data class BgpDiff(
     }.joinToString(", ")
 }
 
-fun ByteReadPacket.readPrefixes(totalLength: Int): Set<IpAddressPrefix> = buildSet {
+fun Source.readPrefixes(totalLength: Int): Set<IpAddressPrefix> = buildSet {
     var remaining = totalLength
     while (remaining > 0) {
         val length = readUByte().toInt()
         check(length in 0..32) { "BGP: Prefix length must be in range 0..32 but got: $length" }
         val n = prefixBytes(length)
-        val prefix = readBytes(n)
+        val prefix = readByteArray(n)
         add(IpAddressPrefix(length, prefix))
         remaining -= 1 + n
     }
 }
 
-fun composePrefixes(prefixes: ArrayDeque<IpAddressPrefix>, maxLength: Int) = buildPacket {
+fun composePrefixes(prefixes: ArrayDeque<IpAddressPrefix>, maxLength: Int): Source = buildPacket {
     var remBytes = maxLength
     while (prefixes.isNotEmpty()) {
         if (remBytes <= 0) break

@@ -2,6 +2,7 @@ import BgpAttrFlag.Optional
 import BgpAttrFlag.Transitive
 import BgpAttrType.*
 import io.ktor.utils.io.core.*
+import kotlinx.io.*
 
 typealias BgpAttributes = List<BgpAttribute>
 typealias BgpCommunities = Set<BgpCommunity>
@@ -26,14 +27,14 @@ fun createAttributes(endpoint: BgpEndpoint, communities: BgpCommunities): BgpAtt
       writeByte(2)
       writeByte(1)
       writeUShort(endpoint.autonomousSystem)
-    }.readBytes()))
+    }.readByteArray()))
     add(BgpAttribute(NEXT_HOP.type, endpoint.address.bytes))
     if (communities.isNotEmpty()) {
         add(BgpAttribute(COMMUNITY.type, communities.toBytes()))
     }
 }
 
-fun ByteReadPacket.readAttributes(totalLength: Int): BgpAttributes = buildList {
+fun Source.readAttributes(totalLength: Int): BgpAttributes = buildList {
     var remaining = totalLength
     while (remaining > 0) {
         val flags = readUByte()
@@ -47,12 +48,12 @@ fun ByteReadPacket.readAttributes(totalLength: Int): BgpAttributes = buildList {
             readUByte().toInt()
         }
         remaining -= n
-        val data = readBytes(n)
+        val data = readByteArray(n)
         add(BgpAttribute(type, data, flags))
     }
 }
 
-fun composeAttributes(attributes: BgpAttributes) = buildPacket {
+fun composeAttributes(attributes: BgpAttributes): Source = buildPacket {
     for (attr in attributes) {
         writeUByte(attr.flags)
         writeUByte(attr.type)
@@ -100,14 +101,14 @@ fun BgpCommunities.toBytes(): ByteArray = buildPacket {
         writeUShort(c.autonomousSystem)
         writeUShort(c.community)
     }
-}.readBytes()
+}.readByteArray()
 
 operator fun UByte.contains(flag: BgpAttrFlag) = (this and flag.mask) != 0.toUByte()
 
 class BgpAttribute(
     val type: UByte,
     val bytes: ByteArray,
-    val flags: UByte = BgpAttrType.values().find { it.type == type }!!.defaultFlags.let {
+    val flags: UByte = BgpAttrType.entries.find { it.type == type }!!.defaultFlags.let {
         f -> if (bytes.size > 0xff) f or BgpAttrFlag.ExtendedLength.mask else f
     }
 ) {
@@ -124,9 +125,9 @@ class BgpAttribute(
         type == COMMUNITY.type && flags == COMMUNITY.defaultFlags && bytes.isNotEmpty() && bytes.size % 4 == 0 ->
             BgpCommunities(bytes).toString()
         else -> buildString {
-            BgpAttrType.values().find { it.type == type }?.let { append(it.name) } ?: append(type)
+            BgpAttrType.entries.find { it.type == type }?.let { append(it.name) } ?: append(type)
             append('{')
-            for (flag in BgpAttrFlag.values()) if (flag in flags) append(flag.char)
+            for (flag in BgpAttrFlag.entries) if (flag in flags) append(flag.char)
             append("}")
             append(bytes.toHexString())
         }

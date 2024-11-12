@@ -5,13 +5,14 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.io.*
 import kotlin.time.Duration.Companion.seconds
 
 const val BGP_PORT = 179
 const val BGP_VERSION: Byte = 4
 const val HOLD_TIME: UShort = 240u
 
-val BGP_MARKER = UByteArray(16) { 0xffu }
+val BGP_MARKER = UByteArray(16) { 0xffu }.toByteArray()
 
 enum class BgpType(val tag: Byte) { OPEN(1), UPDATE(2), NOTIFICATION(3), KEEP_ALIVE(4) }
 
@@ -47,7 +48,7 @@ suspend fun maintainBgpConnection(
         check(version == BGP_VERSION) { "Expected version $BGP_VERSION but got: $version" }
         val remoteAs = readUShort()
         val holdTime = readUShort()
-        val remoteId = IpAddress(readBytes(4))
+        val remoteId = IpAddress(readByteArray(4))
         log("Connected to ${BgpEndpoint(remoteId, remoteAs)}")
         if (holdTime > 0u) commonHoldTime = minOf(HOLD_TIME, holdTime)
     }
@@ -61,10 +62,7 @@ suspend fun maintainBgpConnection(
     onActive(connection)
 }
 
-// Workaround for https://youtrack.jetbrains.com/issue/KT-57875
-suspend fun ByteReadChannel.parseBgpMessages() = parseBgpMessages {}
-
-suspend fun ByteReadChannel.parseBgpMessages(onUpdate: suspend ByteReadPacket.() -> Unit) {
+suspend fun ByteReadChannel.parseBgpMessages(onUpdate: suspend Source.() -> Unit) {
     while (true) {
         readBgpMessage { type ->
             when (type) {
@@ -81,7 +79,7 @@ suspend fun ByteReadChannel.parseBgpMessages(onUpdate: suspend ByteReadPacket.()
     }
 }
 
-fun ByteReadPacket.readBpgUpdate(): BgpUpdate {
+fun Source.readBpgUpdate(): BgpUpdate {
     val withdrawnRoutesLen = readUShort()
     val withdrawn = readPrefixes(withdrawnRoutesLen.toInt())
     val totalPathAttributeLength = readUShort()
@@ -90,7 +88,7 @@ fun ByteReadPacket.readBpgUpdate(): BgpUpdate {
     return BgpUpdate(withdrawn, reachable, attributes)
 }
 
-fun BytePacketBuilder.buildBgpPacket(type: BgpType, block: BytePacketBuilder.() -> Unit) {
+fun Sink.buildBgpPacket(type: BgpType, block: Sink.() -> Unit) {
     val packet = buildPacket(block)
     writeFully(BGP_MARKER)
     writeShort((packet.remaining.toInt() + BGP_MARKER.size + 3).toShort())
@@ -98,26 +96,26 @@ fun BytePacketBuilder.buildBgpPacket(type: BgpType, block: BytePacketBuilder.() 
     writePacket(packet)
 }
 
-suspend fun ByteWriteChannel.writeBgpMessage(type: BgpType, block: BytePacketBuilder.() -> Unit) {
-    writePacket {
+suspend fun ByteWriteChannel.writeBgpMessage(type: BgpType, block: Sink.() -> Unit) {
+    writePacket(buildPacket {
         buildBgpPacket(type, block)
-    }
+    })
     flush()
 }
 
-fun BytePacketBuilder.write(localAddress: IpAddress) {
+fun Sink.write(localAddress: IpAddress) {
     for (i in 0..3) writeByte(localAddress.bytes[i])
 }
 
-suspend fun ByteReadChannel.readBgpMessage(block: suspend ByteReadPacket.(BgpType) -> Unit) {
+suspend fun ByteReadChannel.readBgpMessage(block: suspend Source.(BgpType) -> Unit) {
     val marker = ByteArray(BGP_MARKER.size)
     readFully(marker)
-    check(marker.toUByteArray().contentEquals(BGP_MARKER)) { "Wrong marker in incoming stream: ${marker.toHexString()} " }
+    check(marker.contentEquals(BGP_MARKER)) { "Wrong marker in incoming stream: ${marker.toHexString()} " }
     val length = readShort()
     check(length in 19..4096) { "Wrong length in incoming stream: $length" }
     val n = length - BGP_MARKER.size - 3
     val typeTag = readByte()
-    val type = BgpType.values().find { it.tag == typeTag }
+    val type = BgpType.entries.find { it.tag == typeTag }
     check(type != null) { "Wrong type in incoming stream: $typeTag" }
     readPacket(n).use {
         block(it, type)

@@ -1,15 +1,19 @@
-@file:OptIn(ExperimentalCoroutinesApi::class)
+@file:OptIn(ExperimentalCoroutinesApi::class, ExperimentalForeignApi::class)
 
 import io.ktor.utils.io.errors.*
+import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.cinterop.alloc
 import kotlinx.cinterop.memScoped
 import kotlinx.cinterop.ptr
 import kotlinx.cinterop.readBytes
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.DelicateCoroutinesApi
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.newSingleThreadContext
 import platform.posix.*
+import kotlinx.io.IOException
 
+@OptIn(DelicateCoroutinesApi::class)
 actual fun createSelectorDispatcher(): CoroutineDispatcher =
     newSingleThreadContext("Selector")
 
@@ -33,7 +37,7 @@ actual fun readFileBytesCatching(file: String): Result<ByteArray> {
         val chunkSize = 4096uL
         val buf = malloc(chunkSize) ?: return Result.failure(IOException("malloc failure"))
         do {
-            val n = fread(buf, 1, chunkSize, fd)
+            val n = fread(buf, 1uL, chunkSize, fd)
             if (n != 0uL) chunks += buf.readBytes(n.toInt())
         } while (n == chunkSize)
     }
