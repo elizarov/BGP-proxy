@@ -15,7 +15,7 @@ class DnsServer(
 ) {
     private val log = Log("DnsServer")
 
-    suspend fun run(onQuery: suspend (src: DnsQuerySource, query: DnsMessage) -> DnsMessage) = coroutineScope<Unit>{
+    suspend fun go(onQuery: suspend (src: DnsQuerySource, query: DnsMessage) -> DnsMessage?) = coroutineScope<Unit>{
         val socketAddress = InetSocketAddress(bindAddress, DNS_PORT)
         // UDP
         launch {
@@ -23,7 +23,7 @@ class DnsServer(
             log("Listening UDP $socketAddress")
             for (queryDatagram in udpSocket.incoming) {
                 val query: DnsMessage = try {
-                    DnsPacket(queryDatagram.packet.readByteArray()).readDnsMessage()
+                    queryDatagram.packet.readDnsMessage()
                 } catch (e: IOException) {
                     // ignore broken datagrams & continue
                     log("Broken datagram from ${queryDatagram.address}: $e")
@@ -31,9 +31,11 @@ class DnsServer(
                 }
                 launch {
                     val response = onQuery(DnsQuerySource("UDP", queryDatagram.address), query)
-                    val responsePacket = response.buildMessagePacket()
-                    val responseDatagram = Datagram(responsePacket, queryDatagram.address)
-                    udpSocket.outgoing.send(responseDatagram)
+                    if (response != null) {
+                        val responsePacket = response.buildMessagePacket()
+                        val responseDatagram = Datagram(responsePacket, queryDatagram.address)
+                        udpSocket.outgoing.send(responseDatagram)
+                    }
                 }
             }
         }
@@ -51,15 +53,17 @@ class DnsServer(
                         coroutineScope {
                             while (true) {
                                 val size = input.readShort().toUShort().toInt()
-                                val query = DnsPacket(input.readByteArray(size)).readDnsMessage()
+                                val query = input.readByteArray(size).readDnsMessage()
                                 launch {
                                     val response = onQuery(DnsQuerySource("TCP", tcpSocket.remoteAddress), query)
-                                    val responsePacket = response.buildMessagePacket()
-                                    val fullPacket = buildPacket {
-                                        writeShort(responsePacket.remaining.toUShort().toShort())
-                                        writePacket(responsePacket)
+                                    if (response != null) {
+                                        val responsePacket = response.buildMessagePacket()
+                                        val fullPacket = buildPacket {
+                                            writeShort(responsePacket.remaining.toUShort().toShort())
+                                            writePacket(responsePacket)
+                                        }
+                                        output.writePacket(fullPacket)
                                     }
-                                    output.writePacket(fullPacket)
                                 }
                             }
                         }

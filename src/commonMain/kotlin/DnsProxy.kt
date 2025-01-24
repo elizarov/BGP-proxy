@@ -8,9 +8,14 @@ fun main(args: Array<String>) = runBlocking {
     }
     val selectorManager = SelectorManager(createSelectorDispatcher())
     val client = DnsClient(args.toList(), selectorManager)
+    launch { client.go() }
     val log = Log("DnsProxy")
-    DnsServer("0.0.0.0", selectorManager).run { src, query ->
+    DnsServer("0.0.0.0", selectorManager).go { src, query ->
         log("$src: $query")
-        DnsMessage(query.id, DnsRCode.NotImplemented.toResponseFlags())
+        if (query.isQuery && query.opCode == 0 && query.rCode == 0 && query.question != null) {
+            client.query(query.flags, query.question)?.copy(id = query.id)
+        } else {
+            DnsMessage(query.id, DnsRCode.NotImplemented.toResponseFlags())
+        }
     }
 }

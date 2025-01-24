@@ -3,32 +3,43 @@ import kotlinx.io.*
 
 val DNS_PORT = 53
 
-object DnsFlags {
-    /** A one bit field that specifies whether this message is a query (0), or a response (1). */
-    val QR = 1
+enum class DnsFlag(val shift: Int, val bits: Int = 1) {
+    /**
+     * A one bit field that specifies whether this message is a query (0), or a response (1).
+     */
+    QR(15),
+    /**
+     * Authoritative Answer - this bit is valid in responses and specifies that the responding name server is an
+     * authority for the domain name in question section.
+     */
+    AA(10),
+    /**
+     * TrunCation - specifies that this message was truncate due to length greater than that permitted on the
+     * transmission channel.
+     */
+    TC(9),
+    /**
+     * Recursion Desired - this bit may be set in a query and is copied into the response. If RD is set, it directs
+     * the name server to pursue the query recursively. Recursive query support is optional.
+     */
+    RD(8),
+    /**
+     * Recursion Available - this be is set or cleared in a response, and denotes whether recursive query support is
+     * available in the name server.
+     */
+    RA(7),
+    /**
+     * A four bit field that specifies kind of query in this message.  This value is set by the originator of a query
+     * and copied into the response. The value is 0 for standard query (QUERY).
+     */
+    OPCODE(11, 4),
+    /**
+     * Response code - this 4 bit field is set as part of responses. See [DnsRCode].
+     */
+    RCODE(0, 4);
 
-    /** Authoritative Answer - this bit is valid in responses and specifies that the responding name server is an
-    authority for the domain name in question section. */
-    val AA = 1 shl 5
-
-    /** TrunCation - specifies that this message was truncate due to length greater than that permitted on the
-    transmission channel. */
-    val TC = 1 shl 6
-
-    /** Recursion Desired - this bit may be set in a query and is copied into the response. If RD is set, it directs
-    the name server to pursue the query recursively. Recursive query support is optional. */
-    val RD = 1 shl 7
-
-    /** Recursion Available - this be is set or cleared in a response, and denotes whether recursive query support is
-    available in the name server. */
-    val RA = 1 shl 8
-
-    val OPCODE_SHIFT = 1
-    val OPCODE_MASK = 0xf
-    val OPCODE_QUERY = 0 // standard query, the only one supported
-
-    val RCODE_SHIFT = 12
-    val RCODE_MASK = 0xf
+    fun get(flags: UShort): Int = (flags.toInt() shr shift) and ((1 shl bits) - 1)
+    fun value(x: Int) = x shl bits
 }
 
 enum class DnsRCode(val code: Int) {
@@ -48,9 +59,9 @@ fun Int.toDnsRCodeString(): String {
 }
 
 fun DnsRCode.toResponseFlags(): UShort =
-    (DnsFlags.QR or (code shl DnsFlags.RCODE_SHIFT)).toUShort()
+    (DnsFlag.QR.value(1) or DnsFlag.RCODE.value(code)).toUShort()
 
-class DnsMessage(
+data class DnsMessage(
     val id: UShort,
     val flags: UShort,
     val question: DnsQuestion? = null,
@@ -58,55 +69,57 @@ class DnsMessage(
     val authority: List<DnsAnswer> = emptyList(),
     val additional: List<DnsAnswer> = emptyList()
 ) {
-    val opCode: Int get() = (flags.toInt() shr DnsFlags.OPCODE_SHIFT) and DnsFlags.OPCODE_MASK
-    val rCode: Int get() = (flags.toInt() shr DnsFlags.RCODE_SHIFT) and DnsFlags.RCODE_MASK
+    val isQuery: Boolean get() = DnsFlag.QR.get(flags) == 0
+    val opCode: Int get() = DnsFlag.OPCODE.get(flags)
+    val rCode: Int get() = DnsFlag.RCODE.get(flags)
 
     @OptIn(ExperimentalStdlibApi::class)
     override fun toString(): String = buildString {
         append('#')
         append(id.toHexString())
-        val f = flags.toInt()
-        if ((f and DnsFlags.QR) != 0) {
-            append(" Response")
-        } else {
-            append(" Query")
+        for (flag in DnsFlag.entries) {
+            val value = flag.get(flags)
+            if (value != 0) {
+                append(' ')
+                append(flag.name)
+                if (flag.bits > 1) {
+                    when (flag) {
+                        DnsFlag.RCODE -> append(value.toDnsRCodeString())
+                        else -> append(value)
+                    }
+                }
+            }
         }
-        if ((f and DnsFlags.AA) != 0) {
-            append(" AA")
-        }
-        if ((f and DnsFlags.TC) != 0) {
-            append(" TC")
-        }
-        if ((f and DnsFlags.RD) != 0) {
-            append(" RD")
-        }
-        if ((f and DnsFlags.RA) != 0) {
-            append(" RA")
-        }
-        append(" OP")
-        append(opCode)
-        append(' ')
-        append(rCode.toDnsRCodeString())
         question?.let {
             append(' ')
             append(it)
         }
         answer.forEach {
-            append(' ')
+            append("\n\tAN ")
             append(it)
         }
         authority.forEach {
-            append(" NS")
+            append("\n\tNS ")
             append(it)
         }
         additional.forEach {
-            append(" AR")
+            append("\n\tAR ")
             append(it)
         }
     }
 }
 
 class DnsName(val label: ByteArray, val next: DnsName? = null) {
+    private var hash = 0
+
+    override fun equals(other: Any?): Boolean =
+        this === other || other is DnsName && label.contentEquals(other.label) && next == other.next
+
+    override fun hashCode(): Int {
+        if (hash == 0) hash = label.contentHashCode() * 7919 + next.hashCode()
+        return hash
+    }
+
     override fun toString(): String = buildString {
         var cur = this@DnsName
         while (true) {
@@ -118,7 +131,9 @@ class DnsName(val label: ByteArray, val next: DnsName? = null) {
     }
 
     companion object {
-        const val POINTER_BITS = 0xc0
+        const val POINTER_FLAG = 0xc0
+        const val POINTER_MASK = 0x3f
+        const val POINTER_MAX = (POINTER_MASK shl 8) or 0xff
     }
 }
 
@@ -154,7 +169,6 @@ class DnsQuestion(
     val qClass: UShort
 ) {
     override fun toString(): String = buildString {
-        append('?')
         append(qName)
         append(' ')
         append(qType.toDnsTypeString())
@@ -171,7 +185,6 @@ class DnsAnswer(
     val rData: ByteArray
 ) {
     override fun toString(): String = buildString {
-        append('=')
         append(name)
         append(' ')
         append(aType.toDnsTypeString())
@@ -181,6 +194,18 @@ class DnsAnswer(
         append(ttl)
         append(' ')
         append(rData.toHexString())
+    }
+}
+
+fun Source.readDnsMessage(): DnsMessage =
+    readByteArray().readDnsMessage()
+
+fun ByteArray.readDnsMessage(): DnsMessage {
+    val packet = DnsPacket(this)
+    try {
+        return packet.readDnsMessage()
+    } catch (e: DnsProtocolFormatException) {
+        throw DnsProtocolFormatException("${e.message} in ${this.toHexString()}")
     }
 }
 
@@ -212,16 +237,46 @@ fun DnsPacketBuilder.writeDnsMessage(message: DnsMessage) {
     message.additional.forEach { writeDnsAnswer(it) }
 }
 
+@OptIn(ExperimentalStdlibApi::class)
 fun DnsPacket.readDnsName(): DnsName? {
     val offset = offset
     val len = readUByte().toInt()
     if (len == 0) return null
-    if ((len and DnsName.POINTER_BITS) == DnsName.POINTER_BITS) {
-        return getNameAt(len and DnsName.POINTER_BITS.inv())
+    if ((len and DnsName.POINTER_FLAG) == DnsName.POINTER_FLAG) {
+        val second = readUByte().toInt()
+        val ptr = ((len and DnsName.POINTER_MASK) shl 8) or second
+        if (ptr >= offset) throw DnsProtocolFormatException("Future pointer to 0x${ptr.toUShort().toHexString()} at offset 0x${offset.toUShort().toHexString()}")
+        val name = getNameAt(ptr)
+        return name ?: readDnsNameAt(ptr)
     }
     val name = DnsName(readByteArray(len), readDnsName())
-    putNameAt(offset, name)
+    putNameAt(name, offset)
     return name
+}
+
+fun DnsPacket.readDnsNameAt(ptr: Int): DnsName? {
+    val curOffset = offset
+    offset = ptr
+    return readDnsName().also { offset = curOffset }
+}
+
+fun DnsPacketBuilder.writeDnsName(name: DnsName) {
+    var cur: DnsName = name
+    while (true) {
+        val ptr = getNameOffset(cur)
+        if (ptr != 0) {
+            writeUByte(((ptr shr 8) or DnsName.POINTER_FLAG).toUByte())
+            writeUByte(ptr.toUByte())
+            return
+        } else {
+            putNameAt(cur, offset)
+            writeUByte(cur.label.size.toUByte())
+            write(cur.label)
+        }
+        if (cur.next == null) break
+        cur = cur.next
+    }
+    writeUByte(0u)
 }
 
 fun DnsPacket.readDnsQuestion(): DnsQuestion {
@@ -232,7 +287,9 @@ fun DnsPacket.readDnsQuestion(): DnsQuestion {
 }
 
 fun DnsPacketBuilder.writeDnsQuestion(question: DnsQuestion) {
-    // todo:
+    writeDnsName(question.qName)
+    writeUShort(question.qType)
+    writeUShort(question.qClass)
 }
 
 fun DnsPacket.readDnsAnswer(): DnsAnswer {
@@ -246,7 +303,12 @@ fun DnsPacket.readDnsAnswer(): DnsAnswer {
 }
 
 fun DnsPacketBuilder.writeDnsAnswer(answer: DnsAnswer) {
-    // todo:
+    writeDnsName(answer.name)
+    writeUShort(answer.aType)
+    writeUShort(answer.aClass)
+    writeUInt(answer.ttl)
+    writeUShort(answer.rData.size.toUShort())
+    write(answer.rData)
 }
 
 class DnsProtocolFormatException(message: String) : IOException(message)
@@ -284,12 +346,11 @@ class DnsPacket(val bytes: ByteArray) {
         return bytes.copyOfRange(offset, offset + size).also { offset += size }
     }
 
-    fun putNameAt(i: Int, name: DnsName) {
+    fun putNameAt(name: DnsName, i: Int) {
         names[i] = name
     }
 
-    fun getNameAt(i: Int): DnsName =
-        names[i] ?: throw DnsProtocolFormatException("Unknown name offset $i")
+    fun getNameAt(i: Int): DnsName? = names[i]
 }
 
 fun DnsMessage.buildMessagePacket(): Source =
@@ -297,6 +358,7 @@ fun DnsMessage.buildMessagePacket(): Source =
 
 class DnsPacketBuilder(val sink: Sink) {
     var offset = 0
+    private val names = HashMap<DnsName, Int>()
 
     fun writeUByte(x: UByte) {
         sink.writeUByte(x)
@@ -312,4 +374,15 @@ class DnsPacketBuilder(val sink: Sink) {
         sink.writeUInt(x)
         offset += 4
     }
+
+    fun write(a: ByteArray) {
+        sink.write(a)
+        offset += a.size
+    }
+
+    fun putNameAt(name: DnsName, i: Int) {
+        if (i <= DnsName.POINTER_MAX) names[name] = i
+    }
+
+    fun getNameOffset(name: DnsName): Int = names[name] ?: 0
 }
