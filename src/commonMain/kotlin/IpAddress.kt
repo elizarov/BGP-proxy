@@ -1,5 +1,5 @@
 
-class IpAddress(val bytes: ByteArray) {
+class IpAddress(val bytes: ByteArray) : DnsData {
     constructor(s: String) : this(
         s.split(".").also {
             check(it.size == 4) { "Address must be 'xxx.xxx.xxx.xxx' but found: $s" }

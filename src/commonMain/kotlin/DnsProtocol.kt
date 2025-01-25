@@ -1,7 +1,9 @@
+@file:OptIn(ExperimentalStdlibApi::class)
+
 import io.ktor.utils.io.core.buildPacket
 import kotlinx.io.*
 
-val DNS_PORT = 53
+const val DNS_PORT = 53
 
 enum class DnsFlag(val shift: Int, val bits: Int = 1) {
     /**
@@ -109,7 +111,7 @@ data class DnsMessage(
     }
 }
 
-class DnsName(val label: ByteArray, val next: DnsName? = null) {
+class DnsName(val label: ByteArray, val next: DnsName? = null) : DnsData {
     private var hash = 0
 
     override fun equals(other: Any?): Boolean =
@@ -137,24 +139,68 @@ class DnsName(val label: ByteArray, val next: DnsName? = null) {
     }
 }
 
-enum class DnsType(val code: UShort) {
-    A(1), NS(2), CNAME(5), SOA(6), PTR(12), MX(15), TXT(16), ANY(255);
+sealed interface DnsData
 
-    constructor(code: Int) : this(code.toUShort())
+class DnsBytes(val bytes: ByteArray) : DnsData {
+    override fun toString(): String = bytes.toHexString()
 }
+
+sealed class DnsDataType<T : DnsData> {
+    abstract fun readFrom(packet: DnsPacket, size: Int): T
+    abstract fun writeImpl(packet: DnsPacketBuilder, data: T)
+    @Suppress("UNCHECKED_CAST")
+    fun write(packet: DnsPacketBuilder, data: DnsData) { writeImpl(packet, data as T) }
+
+    object Bytes : DnsDataType<DnsBytes>() {
+        override fun readFrom(packet: DnsPacket, size: Int): DnsBytes = DnsBytes(packet.readByteArray(size))
+        override fun writeImpl(packet: DnsPacketBuilder, data: DnsBytes) = packet.write(data.bytes)
+    }
+    object Name : DnsDataType<DnsName>() {
+        override fun readFrom(packet: DnsPacket, size: Int): DnsName {
+            val expectedEnd = packet.offset + size
+            val result = packet.readDnsName() ?: throw DnsProtocolFormatException("Empty name")
+            if (packet.offset != expectedEnd) throw DnsProtocolFormatException("Invalid name size")
+            return result
+        }
+
+        override fun writeImpl(packet: DnsPacketBuilder, data: DnsName) {
+            packet.writeDnsName(data)
+        }
+    }
+    object Address : DnsDataType<IpAddress>() {
+        override fun readFrom(packet: DnsPacket, size: Int): IpAddress {
+            if (size != 4) throw DnsProtocolFormatException("Invalid address size: ${size.toUShort().toHexString()}")
+            return IpAddress(packet.readByteArray(4))
+        }
+
+        override fun writeImpl(packet: DnsPacketBuilder, data: IpAddress) {
+            packet.write(data.bytes)
+        }
+    }
+}
+
+enum class DnsType(val code: UShort, val type: DnsDataType<*>) {
+    A(1u, DnsDataType.Address),
+    NS(2u, DnsDataType.Name),
+    CNAME(5u, DnsDataType.Name),
+    PTR(12u, DnsDataType.Name),
+    TXT(16u, DnsDataType.Bytes)
+}
+
+private val codeToDnsType: Map<UShort, DnsType> = DnsType.entries.associate { it.code to it }
+
+fun UShort.isDnsTypeSupported(): Boolean = codeToDnsType.containsKey(this)
+
+fun UShort.toDnsDataType(): DnsDataType<*> = codeToDnsType[this]?.type ?: DnsDataType.Bytes
 
 fun UShort.toDnsTypeString(): String {
     val code = this
-    val type = DnsType.entries.find { it.code == code }
+    val type = codeToDnsType[code]
     if (type != null) return type.name
     return "T$code"
 }
 
-enum class DnsClass(val code: UShort) {
-    IN(1);
-
-    constructor(code: Int) : this(code.toUShort())
-}
+enum class DnsClass(val code: UShort) { IN(1u) }
 
 fun UShort.toDnsClassString(): String {
     val code = this
@@ -182,7 +228,7 @@ class DnsAnswer(
     val aType: UShort,
     val aClass: UShort,
     val ttl: UInt,
-    val rData: ByteArray
+    val rData: DnsData // depends on aType
 ) {
     override fun toString(): String = buildString {
         append(name)
@@ -193,7 +239,7 @@ class DnsAnswer(
         append(" TTL ")
         append(ttl)
         append(' ')
-        append(rData.toHexString())
+        append(rData)
     }
 }
 
@@ -249,6 +295,9 @@ fun DnsPacket.readDnsName(): DnsName? {
         val name = getNameAt(ptr)
         return name ?: readDnsNameAt(ptr)
     }
+    if (len >= DnsName.POINTER_MASK) {
+        throw DnsProtocolFormatException("Invalid label length ${len.toUByte().toHexString()} at offset 0x${offset.toUShort().toHexString()}")
+    }
     val name = DnsName(readByteArray(len), readDnsName())
     putNameAt(name, offset)
     return name
@@ -298,7 +347,8 @@ fun DnsPacket.readDnsAnswer(): DnsAnswer {
     val aClass = readUShort()
     val ttl = readUInt()
     val rdLen = readUShort().toInt()
-    val rData = readByteArray(rdLen)
+    val type = aType.toDnsDataType()
+    val rData = type.readFrom(this, rdLen)
     return DnsAnswer(name, aType, aClass, ttl, rData)
 }
 
@@ -307,8 +357,16 @@ fun DnsPacketBuilder.writeDnsAnswer(answer: DnsAnswer) {
     writeUShort(answer.aType)
     writeUShort(answer.aClass)
     writeUInt(answer.ttl)
-    writeUShort(answer.rData.size.toUShort())
-    write(answer.rData)
+    val type = answer.aType.toDnsDataType()
+    val start = offset + 2
+    var size: Int
+    val dataPacket = buildPacket {
+        val builder = DnsPacketBuilder(this, start, names)
+        type.write(builder, answer.rData)
+        size = builder.offset - start
+    }
+    writeUShort(size.toUShort())
+    write(dataPacket.readByteArray(size))
 }
 
 class DnsProtocolFormatException(message: String) : IOException(message)
@@ -356,10 +414,11 @@ class DnsPacket(val bytes: ByteArray) {
 fun DnsMessage.buildMessagePacket(): Source =
     buildPacket { DnsPacketBuilder(this).writeDnsMessage(this@buildMessagePacket) }
 
-class DnsPacketBuilder(val sink: Sink) {
-    var offset = 0
-    private val names = HashMap<DnsName, Int>()
-
+class DnsPacketBuilder(
+    val sink: Sink,
+    var offset: Int = 0,
+    val names: HashMap<DnsName, Int> = HashMap()
+) {
     fun writeUByte(x: UByte) {
         sink.writeUByte(x)
         offset++
