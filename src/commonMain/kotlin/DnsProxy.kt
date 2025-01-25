@@ -1,8 +1,9 @@
 import io.ktor.network.selector.*
 import kotlinx.coroutines.*
 
+private val log = Log("DnsProxy")
+
 suspend fun runDnsProxy(selectorManager: SelectorManager, dnsClient: DnsClient, verbose: Boolean = false) = coroutineScope {
-    val log = Log("DnsProxy")
     DnsServer(selectorManager).runDnsServer { src, query ->
         if (verbose) {
             log("Request $src: $query")
@@ -11,18 +12,7 @@ suspend fun runDnsProxy(selectorManager: SelectorManager, dnsClient: DnsClient, 
             query.question.qType.isDnsTypeSupported() && query.question.qClass == DnsClass.IN.code)
         {
             val response = dnsClient.query(query.flags, query.question)
-            if (response != null) {
-                buildString {
-                    append(query.question.qName)
-                    append(": ")
-                    val ips = response.answer.filter { it.aType == DnsType.A.code }.map { it.rData as IpAddress  }
-                    if (ips.isEmpty()) {
-                        append("n/a")
-                    } else {
-                        appendListForLog(ips)
-                    }
-                }.let { log(it) }
-            }
+            if (response != null) logDnsProxyResponse(query.question, response)
             response?.copy(id = query.id)
         } else {
             log("Unsupported query: $query")
@@ -30,3 +20,19 @@ suspend fun runDnsProxy(selectorManager: SelectorManager, dnsClient: DnsClient, 
         }
     }
 }
+
+private fun logDnsProxyResponse(question: DnsQuestion, response: DnsMessage) {
+    if (question.qType == DnsType.A.code) {
+        buildString {
+            append(question.qName)
+            append(": ")
+            val ips = response.answer.filter { it.aType == DnsType.A.code }.map { it.rData as IpAddress }
+            if (ips.isEmpty()) {
+                append("n/a")
+            } else {
+                appendListForLog(ips)
+            }
+        }.let { log(it) }
+    }
+}
+
