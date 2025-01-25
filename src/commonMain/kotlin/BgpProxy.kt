@@ -14,8 +14,17 @@ data class ResolvedConfigPrefixes(
 )
 
 fun main(args: Array<String>) = runBlocking {
-    if (args.size < 3) {
-        println("Usage: PGPProxy <local-address> <local-autonomous-system> <config-file> [<nameservers>]")
+    if (args.size < 2) {
+        println("Usage: BGPProxy <local-address> <local-autonomous-system> <config-file> [<nameservers>]")
+        println("   or: BGPProxy --dns-only <primary-nameserver> [<secondary-nameservers>]")
+        return@runBlocking
+    }
+    val selectorManager = SelectorManager(createSelectorDispatcher())
+    if (args[0].equals("--dns-only", ignoreCase = true)) {
+        val dnsClient = DnsClient(args.drop(1).toList(), selectorManager, verbose = true)
+        dnsClient.initDnsClient()
+        launch { dnsClient.runDnsClient() }
+        runDnsProxy(selectorManager, dnsClient, verbose = true)
         return@runBlocking
     }
     val log = Log("main")
@@ -27,7 +36,6 @@ fun main(args: Array<String>) = runBlocking {
 
     log("STARTED with local $endpoint")
 
-    val selectorManager = SelectorManager(createSelectorDispatcher())
     val dnsClient = if (nameservers.isEmpty()) null else DnsClient(nameservers, selectorManager)
     val bgpClientManager = BgpClientManager(this, endpoint, selectorManager)
     val hostResolver = HostResolver(this, dnsClient)

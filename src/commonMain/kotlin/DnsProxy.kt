@@ -1,18 +1,6 @@
 import io.ktor.network.selector.*
 import kotlinx.coroutines.*
 
-fun main(args: Array<String>) = runBlocking {
-    if (args.isEmpty()) {
-        println("Usage: DnsProxy <primary-nameserver> [<secondary-nameserver>]")
-        return@runBlocking
-    }
-    val selectorManager = SelectorManager(createSelectorDispatcher())
-    val dnsClient = DnsClient(args.toList(), selectorManager, verbose = true)
-    dnsClient.initDnsClient()
-    launch { dnsClient.runDnsClient() }
-    runDnsProxy(selectorManager, dnsClient, verbose = true)
-}
-
 suspend fun runDnsProxy(selectorManager: SelectorManager, dnsClient: DnsClient, verbose: Boolean = false) = coroutineScope {
     val log = Log("DnsProxy")
     DnsServer(selectorManager).runDnsServer { src, query ->
