@@ -17,7 +17,7 @@ suspend fun runDnsProxy(selectorManager: SelectorManager, dnsClient: DnsClient, 
                     append(": ")
                     val ips = response.answer.filter { it.aType == DnsType.A.code }.map { it.rData as IpAddress  }
                     if (ips.isEmpty()) {
-                        append("empty")
+                        append("n/a")
                     } else {
                         appendListForLog(ips)
                     }
@@ -25,6 +25,7 @@ suspend fun runDnsProxy(selectorManager: SelectorManager, dnsClient: DnsClient, 
             }
             response?.copy(id = query.id)
         } else {
+            log("Unsupported query: $query")
             DnsMessage(query.id, DnsRCode.NotImplemented.toResponseFlags())
         }
     }
