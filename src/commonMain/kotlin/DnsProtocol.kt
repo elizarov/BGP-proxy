@@ -185,7 +185,10 @@ enum class DnsType(val code: UShort, val type: DnsDataType<*>) {
     CNAME(5u, DnsDataType.Name),
     SOA(6u, DnsDataType.SOA),
     PTR(12u, DnsDataType.Name),
-    TXT(16u, DnsDataType.Bytes)
+    TXT(16u, DnsDataType.Bytes),
+    AAAA(28u, DnsDataType.Bytes),
+    SVCB(64u, DnsDataType.Bytes),
+    HTTPS(65u, DnsDataType.Bytes)
 }
 
 private val codeToDnsType: Map<UShort, DnsType> = DnsType.entries.associate { it.code to it }
