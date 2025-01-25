@@ -14,22 +14,26 @@ data class ResolvedConfigPrefixes(
 )
 
 fun main(args: Array<String>) = runBlocking {
-    if (args.size != 3) {
-        println("Usage: PGPProxy <local-address> <local-autonomous-system> <config-file>")
+    if (args.size < 3) {
+        println("Usage: PGPProxy <local-address> <local-autonomous-system> <config-file> [<nameservers>]")
         return@runBlocking
     }
     val log = Log("main")
     val localAddress = IpAddress(args[0])
     val autonomousSystem = args[1].toUShort()
     val configFile = args[2]
+    val nameservers = args.drop(3).toList()
     val endpoint = BgpEndpoint(localAddress, autonomousSystem)
 
     log("STARTED with local $endpoint")
 
     val selectorManager = SelectorManager(createSelectorDispatcher())
+    val dnsClient = if (nameservers.isEmpty()) null else DnsClient(nameservers, selectorManager, true)
     val bgpClientManager = BgpClientManager(this, endpoint, selectorManager)
-    val hostResolver = HostResolver(this)
+    val hostResolver = HostResolver(this, dnsClient)
     val localCommunities = setOf(BgpCommunity(endpoint.autonomousSystem, 0u))
+
+    if (dnsClient != null) launch { dnsClient.runDnsClient() }
 
     // resolve configuration and transform resolved config into BpgState
     val bgpState = launchConfigLoader(configFile).flatMapLatest { config ->

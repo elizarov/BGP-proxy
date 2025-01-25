@@ -2,7 +2,7 @@ import java.lang.Exception
 import java.net.Inet4Address
 import java.net.InetAddress
 
-actual fun resolveHostAddr(host: String): ResolveResult {
+actual fun nativeResolveHostAddr(host: String): ResolveResult {
     try {
         val list = ArrayList<IpAddressPrefix>()
         for (addr: InetAddress in InetAddress.getAllByName(host)) {

@@ -1,6 +1,7 @@
 @file:OptIn(ExperimentalStdlibApi::class)
 
 import io.ktor.utils.io.core.buildPacket
+import io.ktor.utils.io.core.toByteArray
 import kotlinx.io.*
 
 const val DNS_PORT = 53
@@ -41,7 +42,7 @@ enum class DnsFlag(val shift: Int, val bits: Int = 1) {
     RCODE(0, 4);
 
     fun get(flags: UShort): Int = (flags.toInt() shr shift) and ((1 shl bits) - 1)
-    fun value(x: Int) = x shl bits
+    fun value(x: Int) = x shl shift
 }
 
 enum class DnsRCode(val code: Int) {
@@ -83,11 +84,12 @@ data class DnsMessage(
             val value = flag.get(flags)
             if (value != 0) {
                 append(' ')
-                append(flag.name)
-                if (flag.bits > 1) {
-                    when (flag) {
-                        DnsFlag.RCODE -> append(value.toDnsRCodeString())
-                        else -> append(value)
+                when {
+                    flag.bits == 1 -> append(flag.name)
+                    flag == DnsFlag.RCODE -> append(value.toDnsRCodeString())
+                    else -> {
+                        append(flag.name)
+                        append(value)
                     }
                 }
             }
@@ -109,6 +111,13 @@ data class DnsMessage(
             append(it)
         }
     }
+}
+
+fun String.toDnsName(): DnsName? {
+    if (isEmpty()) return null
+    val i = indexOf('.')
+    if (i < 0) return DnsName(toByteArray())
+    return DnsName(substring(0, i).toByteArray(), substring(i + 1).toDnsName())
 }
 
 class DnsName(val label: ByteArray, val next: DnsName? = null) : DnsData {
@@ -136,6 +145,7 @@ class DnsName(val label: ByteArray, val next: DnsName? = null) : DnsData {
         const val POINTER_FLAG = 0xc0
         const val POINTER_MASK = 0x3f
         const val POINTER_MAX = (POINTER_MASK shl 8) or 0xff
+        val EMPTY = DnsName(ByteArray(0))
     }
 }
 
@@ -158,7 +168,7 @@ sealed class DnsDataType<T : DnsData> {
     object Name : DnsDataType<DnsName>() {
         override fun readFrom(packet: DnsPacket, size: Int): DnsName {
             val expectedEnd = packet.offset + size
-            val result = packet.readDnsName() ?: throw DnsProtocolFormatException("Empty name")
+            val result = packet.readDnsName() ?: DnsName.EMPTY
             if (packet.offset != expectedEnd) throw DnsProtocolFormatException("Invalid name size")
             return result
         }
@@ -329,7 +339,7 @@ fun DnsPacketBuilder.writeDnsName(name: DnsName) {
 }
 
 fun DnsPacket.readDnsQuestion(): DnsQuestion {
-    val qName = readDnsName() ?: throw DnsProtocolFormatException("Empty name")
+    val qName = readDnsName() ?: DnsName.EMPTY
     val qType = readUShort()
     val qClass = readUShort()
     return DnsQuestion(qName, qType, qClass)
@@ -342,7 +352,7 @@ fun DnsPacketBuilder.writeDnsQuestion(question: DnsQuestion) {
 }
 
 fun DnsPacket.readDnsAnswer(): DnsAnswer {
-    val name = readDnsName() ?: throw DnsProtocolFormatException("Empty name")
+    val name = readDnsName() ?: DnsName.EMPTY
     val aType = readUShort()
     val aClass = readUShort()
     val ttl = readUInt()

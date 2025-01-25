@@ -3,7 +3,7 @@
 import kotlinx.cinterop.*
 import platform.posix.*
 
-actual fun resolveHostAddr(host: String): ResolveResult {
+actual fun nativeResolveHostAddr(host: String): ResolveResult {
     val list = ArrayList<IpAddressPrefix>()
     memScoped {
         val hints: addrinfo = alloc()

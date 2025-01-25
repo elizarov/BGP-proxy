@@ -15,7 +15,7 @@ class DnsServer(
 ) {
     private val log = Log("DnsServer")
 
-    suspend fun go(onQuery: suspend (src: DnsQuerySource, query: DnsMessage) -> DnsMessage?) = coroutineScope<Unit>{
+    suspend fun runDnsServer(onQuery: suspend (src: DnsQuerySource, query: DnsMessage) -> DnsMessage?) = coroutineScope<Unit>{
         val socketAddress = InetSocketAddress(bindAddress, DNS_PORT)
         // UDP
         launch {

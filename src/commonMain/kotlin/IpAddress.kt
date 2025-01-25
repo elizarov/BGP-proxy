@@ -8,3 +8,5 @@ class IpAddress(val bytes: ByteArray) : DnsData {
 
     override fun toString(): String = bytes.joinToString(".") { it.toUByte().toString() }
 }
+
+fun IpAddress.toIpAddressPrefix(): IpAddressPrefix = IpAddressPrefix(prefix = bytes)
