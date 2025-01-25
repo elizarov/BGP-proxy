@@ -87,8 +87,8 @@ class DnsClient(
         if (verbose) {
             log("Sending $request")
         }
-        val requestPacket = request.buildMessagePacket()
         for (i in addresses.indices) {
+            val requestPacket = request.buildMessagePacket()
             val requestDatagram = Datagram(requestPacket, addresses[i])
             socket.outgoing.send(requestDatagram)
             if (i < addresses.lastIndex) {
