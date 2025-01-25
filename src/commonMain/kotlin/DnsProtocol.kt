@@ -179,6 +179,7 @@ sealed class DnsDataType<T : DnsData> {
     }
 }
 
+// basic from rfc1035
 enum class DnsType(val code: UShort, val type: DnsDataType<*>) {
     A(1u, DnsDataType.Address),
     NS(2u, DnsDataType.Name),
@@ -186,9 +187,10 @@ enum class DnsType(val code: UShort, val type: DnsDataType<*>) {
     SOA(6u, DnsDataType.SOA),
     PTR(12u, DnsDataType.Name),
     TXT(16u, DnsDataType.Bytes),
-    AAAA(28u, DnsDataType.Bytes),
-    SVCB(64u, DnsDataType.Bytes),
-    HTTPS(65u, DnsDataType.Bytes)
+    AAAA(28u, DnsDataType.Bytes), // rfc3596
+    SRV(33u, DnsDataType.Bytes), // rfc2782
+    SVCB(64u, DnsDataType.Bytes), // rfc9460
+    HTTPS(65u, DnsDataType.Bytes) // rfc9460
 }
 
 private val codeToDnsType: Map<UShort, DnsType> = DnsType.entries.associate { it.code to it }
