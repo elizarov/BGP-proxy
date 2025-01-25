@@ -28,12 +28,16 @@ fun main(args: Array<String>) = runBlocking {
     log("STARTED with local $endpoint")
 
     val selectorManager = SelectorManager(createSelectorDispatcher())
-    val dnsClient = if (nameservers.isEmpty()) null else DnsClient(nameservers, selectorManager, true)
+    val dnsClient = if (nameservers.isEmpty()) null else DnsClient(nameservers, selectorManager)
     val bgpClientManager = BgpClientManager(this, endpoint, selectorManager)
     val hostResolver = HostResolver(this, dnsClient)
     val localCommunities = setOf(BgpCommunity(endpoint.autonomousSystem, 0u))
 
-    if (dnsClient != null) launch { dnsClient.runDnsClient() }
+    if (dnsClient != null) {
+        dnsClient.initDnsClient()
+        launch { dnsClient.runDnsClient() }
+        launch { runDnsProxy(selectorManager, dnsClient) }
+    }
 
     // resolve configuration and transform resolved config into BpgState
     val bgpState = launchConfigLoader(configFile).flatMapLatest { config ->
@@ -72,6 +76,7 @@ fun main(args: Array<String>) = runBlocking {
 
     // process incoming connections
     val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT) { reuseAddress = true }
+    log("Listening TCP port $BGP_PORT")
     var connectionCounter = 0
     while (true) {
         val socket = serverSocket.accept()

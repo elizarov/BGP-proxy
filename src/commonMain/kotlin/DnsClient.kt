@@ -35,8 +35,11 @@ class DnsClient(
     private val requests = HashMap<UShort, CompletableDeferred<DnsMessage>>()
     private val log = Log("DnsClient")
 
-    suspend fun runDnsClient() {
+    suspend fun initDnsClient() {
         socket = aSocket(selectorManager).udp().bind()
+    }
+
+    suspend fun runDnsClient() {
         for (datagram in socket.incoming) {
             val response = try {
                 datagram.packet.readDnsMessage()
@@ -55,7 +58,9 @@ class DnsClient(
                 log("Unexpected id from ${datagram.address}")
                 continue
             }
-            log(response.toString())
+            if (verbose) {
+                log("Response: $response")
+            }
             deferred.complete(response)
         }
     }

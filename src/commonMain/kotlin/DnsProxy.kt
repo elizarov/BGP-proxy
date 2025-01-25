@@ -8,20 +8,34 @@ fun main(args: Array<String>) = runBlocking {
     }
     val selectorManager = SelectorManager(createSelectorDispatcher())
     val dnsClient = DnsClient(args.toList(), selectorManager, verbose = true)
+    dnsClient.initDnsClient()
     launch { dnsClient.runDnsClient() }
     runDnsProxy(selectorManager, dnsClient, verbose = true)
 }
 
 suspend fun runDnsProxy(selectorManager: SelectorManager, dnsClient: DnsClient, verbose: Boolean = false) = coroutineScope {
     val log = Log("DnsProxy")
-    DnsServer("0.0.0.0", selectorManager).runDnsServer { src, query ->
+    DnsServer(selectorManager).runDnsServer { src, query ->
         if (verbose) {
-            log("$src: $query")
+            log("Request $src: $query")
         }
         if (query.isQuery && query.opCode == 0 && query.rCode == 0 && query.question != null &&
             query.question.qType.isDnsTypeSupported() && query.question.qClass == DnsClass.IN.code)
         {
-            dnsClient.query(query.flags, query.question)?.copy(id = query.id)
+            val response = dnsClient.query(query.flags, query.question)
+            if (response != null) {
+                buildString {
+                    append(query.question.qName)
+                    append(": ")
+                    val ips = response.answer.filter { it.aType == DnsType.A.code }.map { it.rData as IpAddress  }
+                    if (ips.isEmpty()) {
+                        append("empty")
+                    } else {
+                        appendListForLog(ips)
+                    }
+                }.let { log(it) }
+            }
+            response?.copy(id = query.id)
         } else {
             DnsMessage(query.id, DnsRCode.NotImplemented.toResponseFlags())
         }

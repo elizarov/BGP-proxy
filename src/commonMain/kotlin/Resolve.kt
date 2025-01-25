@@ -16,7 +16,7 @@ sealed class ResolveResult {
 
 expect fun nativeResolveHostAddr(host: String): ResolveResult
 
-private val resolveAgainOnError = 3.seconds
+private val resolveAgainOnError = 5.seconds
 private val nativeResolveTtl = 1.seconds
 private val keepAlive = 1.hours
 private val stopAfter = 10.seconds
@@ -74,11 +74,11 @@ class HostResolver(coroutineScope: CoroutineScope, private val dnsClient: DnsCli
                     append(":")
                     if (added.isNotEmpty()) {
                         append(" (+) ")
-                        appendForLog(added)
+                        appendListForLog(added)
                     }
                     if (removed.isNotEmpty()) {
                         append(" (-) ")
-                        appendForLog(removed)
+                        appendListForLog(removed)
                     }
                     append(" = ")
                     append(current.size)
@@ -89,15 +89,5 @@ class HostResolver(coroutineScope: CoroutineScope, private val dnsClient: DnsCli
             }
             delay(resolveAgain)
         }
-    }
-}
-
-private fun StringBuilder.appendForLog(list: List<IpAddressPrefix>) {
-    val maxN = 2
-    append(list.take(maxN).joinToString(", "))
-    if (list.size > maxN) {
-        append(", ")
-        append(list.size - maxN)
-        append(" more")
     }
 }

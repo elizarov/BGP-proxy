@@ -166,26 +166,16 @@ sealed class DnsDataType<T : DnsData> {
         override fun writeImpl(packet: DnsPacketBuilder, data: DnsBytes) = packet.write(data.bytes)
     }
     object Name : DnsDataType<DnsName>() {
-        override fun readFrom(packet: DnsPacket, size: Int): DnsName {
-            val expectedEnd = packet.offset + size
-            val result = packet.readDnsName() ?: DnsName.EMPTY
-            if (packet.offset != expectedEnd) throw DnsProtocolFormatException("Invalid name size")
-            return result
-        }
-
-        override fun writeImpl(packet: DnsPacketBuilder, data: DnsName) {
-            packet.writeDnsName(data)
-        }
+        override fun readFrom(packet: DnsPacket, size: Int): DnsName = packet.readDnsName() ?: DnsName.EMPTY
+        override fun writeImpl(packet: DnsPacketBuilder, data: DnsName) { packet.writeDnsName(data) }
     }
     object Address : DnsDataType<IpAddress>() {
-        override fun readFrom(packet: DnsPacket, size: Int): IpAddress {
-            if (size != 4) throw DnsProtocolFormatException("Invalid address size: ${size.toUShort().toHexString()}")
-            return IpAddress(packet.readByteArray(4))
-        }
-
-        override fun writeImpl(packet: DnsPacketBuilder, data: IpAddress) {
-            packet.write(data.bytes)
-        }
+        override fun readFrom(packet: DnsPacket, size: Int): IpAddress = IpAddress(packet.readByteArray(4))
+        override fun writeImpl(packet: DnsPacketBuilder, data: IpAddress) { packet.write(data.bytes) }
+    }
+    object SOA : DnsDataType<DnsSoaData>() {
+        override fun readFrom(packet: DnsPacket, size: Int): DnsSoaData = packet.readSoaData()
+        override fun writeImpl(packet: DnsPacketBuilder, data: DnsSoaData) { packet.writeSoaData(data) }
     }
 }
 
@@ -193,6 +183,7 @@ enum class DnsType(val code: UShort, val type: DnsDataType<*>) {
     A(1u, DnsDataType.Address),
     NS(2u, DnsDataType.Name),
     CNAME(5u, DnsDataType.Name),
+    SOA(6u, DnsDataType.SOA),
     PTR(12u, DnsDataType.Name),
     TXT(16u, DnsDataType.Bytes)
 }
@@ -246,12 +237,40 @@ class DnsAnswer(
         append(aType.toDnsTypeString())
         append(' ')
         append(aClass.toDnsClassString())
-        append(" TTL ")
+        append(" TTL:")
         append(ttl)
         append(' ')
         append(rData)
     }
 }
+
+class DnsSoaData(
+    val mName: DnsName,
+    val rName: DnsName,
+    val serial: UInt,
+    val refresh: UInt,
+    val retry: UInt,
+    val expire: UInt,
+    val minimum: UInt
+): DnsData {
+    override fun toString(): String = buildString {
+        append(mName)
+        append(' ')
+        append(rName)
+        append(" SN#")
+        append(serial.toHexString())
+        append(" Refresh:")
+        append(refresh)
+        append(" Retry:")
+        append(retry)
+        append(" Expire:")
+        append(expire)
+        append(" Minimum:")
+        append(minimum)
+    }
+}
+
+// ------------------- reading/writing -------------------
 
 fun Source.readDnsMessage(): DnsMessage =
     readByteArray().readDnsMessage()
@@ -293,7 +312,6 @@ fun DnsPacketBuilder.writeDnsMessage(message: DnsMessage) {
     message.additional.forEach { writeDnsAnswer(it) }
 }
 
-@OptIn(ExperimentalStdlibApi::class)
 fun DnsPacket.readDnsName(): DnsName? {
     val offset = offset
     val len = readUByte().toInt()
@@ -358,7 +376,9 @@ fun DnsPacket.readDnsAnswer(): DnsAnswer {
     val ttl = readUInt()
     val rdLen = readUShort().toInt()
     val type = aType.toDnsDataType()
+    val dataStart = offset
     val rData = type.readFrom(this, rdLen)
+    if (offset != dataStart + rdLen) throw DnsProtocolFormatException("Invalid data size for type $aType at offset 0x${dataStart.toUShort().toHexString()}")
     return DnsAnswer(name, aType, aClass, ttl, rData)
 }
 
@@ -378,6 +398,29 @@ fun DnsPacketBuilder.writeDnsAnswer(answer: DnsAnswer) {
     writeUShort(size.toUShort())
     write(dataPacket.readByteArray(size))
 }
+
+fun DnsPacket.readSoaData(): DnsSoaData {
+    val mName = readDnsName() ?: DnsName.EMPTY
+    val rName = readDnsName() ?: DnsName.EMPTY
+    val serial = readUInt()
+    val refresh = readUInt()
+    val retry = readUInt()
+    val expire = readUInt()
+    val minimum = readUInt()
+    return DnsSoaData(mName, rName, serial, refresh, retry, expire, minimum)
+}
+
+fun DnsPacketBuilder.writeSoaData(data: DnsSoaData) {
+    writeDnsName(data.mName)
+    writeDnsName(data.rName)
+    writeUInt(data.serial)
+    writeUInt(data.refresh)
+    writeUInt(data.retry)
+    writeUInt(data.expire)
+    writeUInt(data.minimum)
+}
+
+// ------------------- util -------------------
 
 class DnsProtocolFormatException(message: String) : IOException(message)
 

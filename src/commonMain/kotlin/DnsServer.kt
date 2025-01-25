@@ -10,17 +10,16 @@ class DnsQuerySource(val protocol: String, val address: SocketAddress) {
 }
 
 class DnsServer(
-    val bindAddress: String,
     val selectorManager: SelectorManager
 ) {
     private val log = Log("DnsServer")
 
     suspend fun runDnsServer(onQuery: suspend (src: DnsQuerySource, query: DnsMessage) -> DnsMessage?) = coroutineScope<Unit>{
-        val socketAddress = InetSocketAddress(bindAddress, DNS_PORT)
+        val socketAddress = InetSocketAddress("0.0.0.0", DNS_PORT)
         // UDP
         launch {
             val udpSocket = aSocket(selectorManager).udp().bind(socketAddress)
-            log("Listening UDP $socketAddress")
+            log("Listening UDP port $DNS_PORT")
             for (queryDatagram in udpSocket.incoming) {
                 val query: DnsMessage = try {
                     queryDatagram.packet.readDnsMessage()
@@ -41,8 +40,8 @@ class DnsServer(
         }
         // TCP
         launch {
-            val tcpServerSocket = aSocket(selectorManager).tcp().bind(socketAddress)
-            log("Listening TCP $socketAddress")
+            val tcpServerSocket = aSocket(selectorManager).tcp().bind(port = DNS_PORT)
+            log("Listening TCP port $DNS_PORT")
             while (true) {
                 val tcpSocket  = tcpServerSocket.accept()
                 launch {
