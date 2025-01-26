@@ -352,7 +352,9 @@ fun DnsPacketBuilder.writeDnsName(name: DnsName) {
             return
         } else {
             putNameAt(cur, offset)
-            writeUByte(cur.label.size.toUByte())
+            val size = cur.label.size
+            writeUByte(size.toUByte())
+            if (size == 0) return // stop at DnsName.EMPTY label
             write(cur.label)
         }
         if (cur.next == null) break
