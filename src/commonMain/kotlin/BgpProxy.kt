@@ -24,7 +24,7 @@ fun main(args: Array<String>) = runBlocking {
         val dnsClient = DnsClient(args.drop(1).toList(), selectorManager, verbose = true)
         dnsClient.initDnsClient()
         launch { dnsClient.runDnsClient() }
-        runDnsProxy(selectorManager, dnsClient, verbose = true)
+        DnsProxy(selectorManager, dnsClient, verbose = true).runDnsProxy()
         return@runBlocking
     }
     val log = Log("main")
@@ -37,6 +37,7 @@ fun main(args: Array<String>) = runBlocking {
     log("STARTED with local $endpoint")
 
     val dnsClient = if (nameservers.isEmpty()) null else DnsClient(nameservers, selectorManager)
+    val dnsProxy = dnsClient?.let { DnsProxy(selectorManager, it) }
     val bgpClientManager = BgpClientManager(this, endpoint, selectorManager)
     val hostResolver = HostResolver(this, dnsClient)
     val localCommunities = setOf(BgpCommunity(endpoint.autonomousSystem, 0u))
@@ -44,7 +45,9 @@ fun main(args: Array<String>) = runBlocking {
     if (dnsClient != null) {
         dnsClient.initDnsClient()
         launch { dnsClient.runDnsClient() }
-        launch { runDnsProxy(selectorManager, dnsClient) }
+    }
+    if (dnsProxy != null) {
+        launch { dnsProxy.runDnsProxy() }
     }
 
     // resolve configuration and transform resolved config into BpgState
