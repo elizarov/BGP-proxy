@@ -55,11 +55,11 @@ class DnsProxy(
         val ips = response.answer.filter { it.aType == DnsType.A.code }.mapTo(HashSet()) { it.rData as IpAddress }
         var ttl: UInt? = null
         var updated: Boolean = true
-//        if (ips.isNotEmpty()) {
-//            ttl = response.answer.minOf { it.ttl }
-//            val expiration = TimeSource.Monotonic.markNow() + ttl.toLong().seconds
+        if (ips.isNotEmpty()) {
+            ttl = response.answer.minOf { it.ttl }
+            val expiration = TimeSource.Monotonic.markNow() + ttl.toLong().seconds
 //            updated = mutex.withLock { cache.put(question.qName, DnsNameResolveCache.Entry(ips, expiration)) }
-//        }
+        }
         if (updated) {
             buildString {
                 append(question.qName)
