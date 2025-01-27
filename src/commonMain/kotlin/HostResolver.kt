@@ -32,20 +32,20 @@ class HostResolver(
 ) {
     private val mutex = Mutex()
     // mutations are protected with mutex
-    private val flows = HashMap<String, Flow<List<IpAddress>>>()
+    private val flows = HashMap<String, Flow<Set<IpAddress>>>()
     private val log = Log("resolve")
 
-    suspend fun resolveFlow(host: String): Flow<List<IpAddress>> = mutex.withLock {
+    suspend fun resolveFlow(host: String): Flow<Set<IpAddress>> = mutex.withLock {
         flows.getOrPut(host) {
-            newResolveFlow(host).stateIn(coroutineScope, SharingStarted.WhileSubscribed(stopAfter), emptyList())
+            newResolveFlow(host).stateIn(coroutineScope, SharingStarted.WhileSubscribed(stopAfter), emptySet())
         }
     }
 
-    private fun newResolveFlow(host: String): Flow<List<IpAddress>> {
+    private fun newResolveFlow(host: String): Flow<Set<IpAddress>> {
         val resolver = resolverFactory.getResolver(host)
         return flow {
             val known = LinkedHashMap<IpAddress, Monotonic.ValueTimeMark>()
-            var lastResult = emptyList<IpAddress>()
+            var lastResult = emptySet<IpAddress>()
             var lastError: String? = null
             while (true) {
                 val result = resolver.resolve(host)
@@ -64,7 +64,7 @@ class HostResolver(
                     }
                 }
                 known.values.removeAll { mark -> mark.elapsedNow() > keepAlive }
-                val current = known.keys.sorted()
+                val current = known.keys.sorted().toSet()
                 if (current != lastResult) {
                     val added = current.minus(lastResult)
                     val removed = lastResult.minus(current)
