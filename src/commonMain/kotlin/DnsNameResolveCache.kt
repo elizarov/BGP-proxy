@@ -11,7 +11,7 @@ class DnsNameResolveCache {
         val map = HashMap<Label, Node>()
         var entry: Entry? = null
         var allIps: Set<IpAddress>? = null
-        var channels: ArrayList<SendChannel<Set<IpAddress>>>? = null
+        var channels: ArrayList<SendChannel<ResolveResult>>? = null
 
         fun computeAllIps(): Set<IpAddress> {
             allIps?.let { return it }
@@ -38,7 +38,10 @@ class DnsNameResolveCache {
 
     private fun getNode(name: DnsName?): Node = reverseNameWalk(name, root, nodeWalkAction)
 
-    fun put(name: DnsName, entry: Entry): List<Pair<SendChannel<Set<IpAddress>>, Set<IpAddress>>>? {
+    // Results:
+    // * null -- nothing updated
+    // * empty list -- updated, but nothing to notify
+    fun put(name: DnsName, entry: Entry): List<Pair<SendChannel<ResolveResult>, ResolveResult>>? {
         val node = getNode(name)
         val updated = node.entry?.ips != entry.ips
         node.entry = entry
@@ -50,13 +53,13 @@ class DnsNameResolveCache {
             if (cur.channels?.isNotEmpty() == true) lastChannel = cur
             cur = cur.parent
         }
-        if (lastChannel == null) return null
-        val result = ArrayList<Pair<SendChannel<Set<IpAddress>>, Set<IpAddress>>>()
+        if (lastChannel == null) return emptyList()
+        val result = ArrayList<Pair<SendChannel<ResolveResult>, ResolveResult>>()
         cur = node
         while (cur != null) {
             val channels = cur.channels
             if (channels != null && channels.isNotEmpty()) {
-                val ips = cur.computeAllIps()
+                val ips = ResolveResult.Ok(cur.computeAllIps())
                 for (channel in channels) {
                     result += channel to ips
                 }
@@ -67,13 +70,15 @@ class DnsNameResolveCache {
         return result
     }
 
-    fun addPrefixFlowChannel(name: DnsName?, channel: SendChannel<Set<IpAddress>>) {
+    fun addPrefixFlowChannel(name: DnsName?, channel: SendChannel<ResolveResult>): ResolveResult {
         val node = getNode(name)
-        val channels = node.channels ?: ArrayList<SendChannel<Set<IpAddress>>>().also { node.channels = it }
+        val channels = node.channels ?:
+            ArrayList<SendChannel<ResolveResult>>().also { node.channels = it }
         channels.add(channel)
+        return ResolveResult.Ok(node.computeAllIps())
     }
 
-    fun removePrefixFlowChannel(name: DnsName?, channel: SendChannel<Set<IpAddress>>) {
+    fun removePrefixFlowChannel(name: DnsName?, channel: SendChannel<ResolveResult>) {
         val node = getNode(name)
         check(node.channels?.remove(channel) == true) { "Removing missing channel for $name" }
     }

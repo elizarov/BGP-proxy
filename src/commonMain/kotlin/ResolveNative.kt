@@ -1,16 +1,16 @@
-import kotlinx.coroutines.DelicateCoroutinesApi
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.newSingleThreadContext
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
 
 expect fun nativeResolveHostAddr(host: String): ResolveResult
 
 @OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
-fun newNativeResolver(): Resolver {
+fun newNativeResolverFactory(): ResolverFactory {
     val nativeResolveDispatcher = newSingleThreadContext("Resolver")
-    return Resolver { host ->
-        withContext(nativeResolveDispatcher) {
-            nativeResolveHostAddr(host)
-        }
+    return ResolverFactory { host ->
+        flow {
+            val result = nativeResolveHostAddr(host)
+            emit(result)
+            delay(result.ttl)
+        }.flowOn(nativeResolveDispatcher)
     }
 }

@@ -4,6 +4,9 @@ import io.ktor.network.sockets.Datagram
 import io.ktor.network.sockets.InetSocketAddress
 import io.ktor.network.sockets.aSocket
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
@@ -59,6 +62,12 @@ class DnsClient(
             }
             deferred.complete(response)
         }
+    }
+
+    fun resolveFlow(host: String): Flow<ResolveResult> = flow {
+        val result = resolve(host)
+        emit(result)
+        delay(result.ttl.coerceAtMost(maxResolvePeriod))
     }
 
     suspend fun resolve(host: String): ResolveResult {

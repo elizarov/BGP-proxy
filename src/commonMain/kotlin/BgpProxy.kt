@@ -40,14 +40,15 @@ fun main(args: Array<String>) = runBlocking {
         DnsProxy(DnsClient(nameservers, selectorManager), selectorManager)
     val bgpClientManager = BgpClientManager(this, endpoint, selectorManager)
     val resolverFactory =
-        if (dnsProxy == null) {
-            // create one native resolver
-            val nativeResolver = newNativeResolver()
-            // and use it for all resolutions
-            ResolverFactory { nativeResolver }
-        } else {
+        if (dnsProxy == null)
+            newNativeResolverFactory()
+        else {
             ResolverFactory { host: String ->
-                Resolver { host -> dnsProxy.dnsClient.resolve(host) }
+                if (host.startsWith("*.")) {
+                    dnsProxy.prefixAddressesFlow(host.substring(2))
+                } else {
+                    dnsProxy.dnsClient.resolveFlow(host)
+                }
             }
         }
     val hostResolver = HostResolver(this, resolverFactory)

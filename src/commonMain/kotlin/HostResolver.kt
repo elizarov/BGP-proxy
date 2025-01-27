@@ -6,26 +6,28 @@ import kotlinx.coroutines.sync.*
 import kotlin.time.*
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.seconds
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.TimeSource.*
 
-private val resolveAgainOnError = 5.seconds
-private val nativeResolveTtl = 1.seconds
 private val keepAlive = 1.hours
 private val stopAfter = 10.seconds
+private val nativeResolveTtl = 1.seconds
+private val resolveAgainOnError = 3.seconds
+
+val maxResolvePeriod = 1.minutes
 
 sealed class ResolveResult {
-    data class Ok(val list: List<IpAddress>, val ttl: Duration = nativeResolveTtl) : ResolveResult()
-    data class Err(val message: String) : ResolveResult()
-}
-
-fun interface Resolver {
-    suspend fun resolve(host: String): ResolveResult
+    abstract val ttl: Duration
+    data class Ok(val addresses: Collection<IpAddress>, override val ttl: Duration = nativeResolveTtl) : ResolveResult()
+    data class Err(val message: String, override val ttl: Duration = resolveAgainOnError) : ResolveResult()
+    data object Periodic : ResolveResult() { override val ttl: Duration = maxResolvePeriod }
 }
 
 fun interface ResolverFactory {
-    fun getResolver(host: String): Resolver
+    fun resolveFlow(host: String): Flow<ResolveResult>
 }
 
+// Resolves and keep the most recent IP addresses seen
 class HostResolver(
     private val coroutineScope: CoroutineScope,
     private val resolverFactory: ResolverFactory
@@ -42,26 +44,24 @@ class HostResolver(
     }
 
     private fun newResolveFlow(host: String): Flow<Set<IpAddress>> {
-        val resolver = resolverFactory.getResolver(host)
+        val resolver = resolverFactory.resolveFlow(host)
         return flow {
             val known = LinkedHashMap<IpAddress, Monotonic.ValueTimeMark>()
             var lastResult = emptySet<IpAddress>()
             var lastError: String? = null
-            while (true) {
-                val result = resolver.resolve(host)
+            resolver.collect { result ->
                 val now = Monotonic.markNow()
-                val resolveAgain: Duration = when (result) {
+                when (result) {
                     is ResolveResult.Err -> {
                         if (result.message != lastError) {
                             lastError = result.message
                             log("$host: $lastError")
                         }
-                        resolveAgainOnError
                     }
                     is ResolveResult.Ok -> {
-                        for (address in result.list) known[address] = now
-                        result.ttl
+                        for (address in result.addresses) known[address] = now
                     }
+                    is ResolveResult.Periodic -> {}
                 }
                 known.values.removeAll { mark -> mark.elapsedNow() > keepAlive }
                 val current = known.keys.sorted().toSet()
@@ -86,7 +86,6 @@ class HostResolver(
                     emit(current)
                     lastResult = current
                 }
-                delay(resolveAgain)
             }
         }
     }

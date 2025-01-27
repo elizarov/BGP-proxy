@@ -1,12 +1,13 @@
 import io.ktor.network.selector.*
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.*
 import kotlinx.coroutines.flow.*
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.*
+import kotlin.time.*
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeSource
+
+private val delayUpdatedResponse = 200.milliseconds
 
 class DnsProxy(
     val dnsClient: DnsClient,
@@ -34,14 +35,23 @@ class DnsProxy(
             }
         }
 
-    fun prefixAddressesFlow(hostPrefix: String): Flow<Set<IpAddress>> {
+    fun prefixAddressesFlow(hostPrefix: String): Flow<ResolveResult> {
         val name = hostPrefix.toDnsName()
-        return callbackFlow {
-            val channel = this
-            mutex.withLock {
-                cache.addPrefixFlowChannel(name, channel) }
+        return flow {
+            val channel = Channel<ResolveResult>(Channel.CONFLATED)
+            val initial = mutex.withLock {
+                cache.addPrefixFlowChannel(name, channel)
+            }
+            emit(initial)
             try {
-                awaitClose()
+                while (true) {
+                    val result = withTimeoutOrNull(maxResolvePeriod) { channel.receive() }
+                    if (result == null) {
+                        emit(ResolveResult.Periodic)
+                    } else {
+                        emit(result)
+                    }
+                }
             } finally {
                 withContext(NonCancellable) {
                     mutex.withLock { cache.removePrefixFlowChannel(name, channel) }
@@ -52,25 +62,37 @@ class DnsProxy(
 
     private suspend fun saveResponse(question: DnsQuestion, response: DnsMessage) {
         if (question.qType != DnsType.A.code) return
-        val ips = response.answer.filter { it.aType == DnsType.A.code }.mapTo(HashSet()) { it.rData as IpAddress }
+        val ips = response.answer
+            .filter { it.aType == DnsType.A.code }
+            .mapTo(HashSet()) { it.rData as IpAddress }
         var ttl: UInt? = null
-        var updated: Boolean = true
+        var updated: List<Pair<SendChannel<ResolveResult>, ResolveResult>>? = null
         if (ips.isNotEmpty()) {
             ttl = response.answer.minOf { it.ttl }
             val expiration = TimeSource.Monotonic.markNow() + ttl.toLong().seconds
-//            updated = mutex.withLock { cache.put(question.qName, DnsNameResolveCache.Entry(ips, expiration)) }
+            updated = mutex.withLock {
+                cache.put(question.qName, DnsNameResolveCache.Entry(ips, expiration))
+            }
         }
-        if (updated) {
-            buildString {
-                append(question.qName)
-                append(": ")
-                if (ips.isEmpty()) {
-                    append("n/a")
-                } else {
-                    appendListForLog(ips)
-                    append(" TTL:$ttl")
-                }
-            }.let { log(it) }
+        if (updated == null) return
+        for ((channel, updatedIps) in updated) {
+            channel.send(updatedIps)
+        }
+        buildString {
+            append(question.qName)
+            append(": ")
+            if (ips.isEmpty()) {
+                append("n/a")
+            } else {
+                appendListForLog(ips)
+                append(" TTL:$ttl")
+            }
+            if (updated.isNotEmpty()) {
+                append(" (*)")
+            }
+        }.let { log(it) }
+        if (updated.isNotEmpty()) {
+            delay(delayUpdatedResponse)
         }
     }
 }
