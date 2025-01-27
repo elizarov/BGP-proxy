@@ -18,8 +18,9 @@ class DnsServer(
         val socketAddress = InetSocketAddress("0.0.0.0", DNS_PORT)
         // UDP
         launch {
-            val udpSocket = aSocket(selectorManager).udp().bind(socketAddress)
-            log("Listening UDP port $DNS_PORT")
+            val udpSocket = retryOperation(log, "Listening UDP port $DNS_PORT") {
+                aSocket(selectorManager).udp().bind(socketAddress)
+            }
             for (queryDatagram in udpSocket.incoming) {
                 val query: DnsMessage = try {
                     queryDatagram.packet.readDnsMessage()
@@ -40,8 +41,9 @@ class DnsServer(
         }
         // TCP
         launch {
-            val tcpServerSocket = aSocket(selectorManager).tcp().bind(port = DNS_PORT)
-            log("Listening TCP port $DNS_PORT")
+            val tcpServerSocket = retryOperation(log, "Listening TCP port $DNS_PORT") {
+                aSocket(selectorManager).tcp().bind(port = DNS_PORT)
+            }
             while (true) {
                 val tcpSocket  = tcpServerSocket.accept()
                 launch {

@@ -86,8 +86,9 @@ fun main(args: Array<String>) = runBlocking {
     }.stateIn(this, SharingStarted.Eagerly, BgpState())
 
     // process incoming connections
-    val serverSocket = aSocket(selectorManager).tcp().bind(port = BGP_PORT) { reuseAddress = true }
-    log("Listening TCP port $BGP_PORT")
+    val serverSocket = retryOperation(log, "Listening TCP port $BGP_PORT") {
+        aSocket(selectorManager).tcp().bind(port = BGP_PORT) { reuseAddress = true }
+    }
     var connectionCounter = 0
     while (true) {
         val socket = serverSocket.accept()
