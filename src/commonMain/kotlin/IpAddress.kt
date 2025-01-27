@@ -7,6 +7,8 @@ class IpAddress(val bytes: ByteArray) : DnsData {
     )
 
     override fun toString(): String = bytes.joinToString(".") { it.toUByte().toString() }
+    override fun equals(other: Any?): Boolean = this === other || other is IpAddress && bytes.contentEquals(other.bytes)
+    override fun hashCode(): Int = bytes.contentHashCode()
 }
 
 fun IpAddress.toIpAddressPrefix(): IpAddressPrefix = IpAddressPrefix(prefix = bytes)

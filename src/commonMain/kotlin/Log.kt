@@ -5,7 +5,7 @@ class Log(private val id: String) {
     }
 }
 
-fun StringBuilder.appendListForLog(list: List<*>) {
+fun StringBuilder.appendListForLog(list: Collection<*>) {
     val maxN = 2
     append(list.take(maxN).joinToString(", "))
     if (list.size > maxN) {
