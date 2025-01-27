@@ -328,7 +328,7 @@ fun DnsPacket.readDnsName(): DnsName? {
         val name = getNameAt(ptr)
         return name ?: readDnsNameAt(ptr)
     }
-    if (len >= DnsName.POINTER_MASK) {
+    if (len > DnsName.POINTER_MASK) {
         throw DnsProtocolFormatException("Invalid label length ${len.toUByte().toHexString()} at offset 0x${offset.toUShort().toHexString()}")
     }
     val name = DnsName(readByteArray(len), readDnsName())
