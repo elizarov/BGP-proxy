@@ -4,7 +4,7 @@ import kotlinx.cinterop.*
 import platform.posix.*
 
 actual fun nativeResolveHostAddr(host: String): ResolveResult {
-    val list = ArrayList<IpAddressPrefix>()
+    val list = ArrayList<IpAddress>()
     memScoped {
         val hints: addrinfo = alloc()
         hints.ai_family = AF_INET
@@ -19,7 +19,7 @@ actual fun nativeResolveHostAddr(host: String): ResolveResult {
             for (i in 0..3) {
                 bits = bits or (((addr shr (8 * i)) and 0xff) shl (8 * (3 - i)))
             }
-            list += IpAddressPrefix(bits = bits)
+            list += IpAddress(bits)
             cur = ai_next
         }
         freeaddrinfo(res.value)

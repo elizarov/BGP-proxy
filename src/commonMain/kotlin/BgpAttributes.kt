@@ -121,7 +121,7 @@ class BgpAttribute(
         type == AS_PATH.type && flags == AS_PATH.defaultFlags && bytes.size == 4 && bytes[0] == 2.toByte() && bytes[1] == 1.toByte() ->
             "AS${(bytes[2].toUByte().toInt() shl 8) + bytes[3].toUByte().toInt()}"
         type == NEXT_HOP.type && flags == NEXT_HOP.defaultFlags && bytes.size == 4 ->
-            IpAddress(bytes).toString()
+            bytes.toIpAddress().toString()
         type == COMMUNITY.type && flags == COMMUNITY.defaultFlags && bytes.isNotEmpty() && bytes.size % 4 == 0 ->
             BgpCommunities(bytes).toString()
         else -> buildString {

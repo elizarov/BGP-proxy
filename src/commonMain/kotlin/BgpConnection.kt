@@ -49,7 +49,7 @@ suspend fun maintainBgpConnection(
         check(version == BGP_VERSION) { "Expected version $BGP_VERSION but got: $version" }
         val remoteAs = readUShort()
         val holdTime = readUShort()
-        val remoteId = IpAddress(readByteArray(4))
+        val remoteId = IpAddress(readInt())
         log("Connected to ${BgpEndpoint(remoteId, remoteAs)}")
         if (holdTime > 0u) commonHoldTime = minOf(HOLD_TIME, holdTime)
     }
@@ -102,10 +102,6 @@ suspend fun ByteWriteChannel.writeBgpMessage(type: BgpType, block: Sink.() -> Un
         buildBgpPacket(type, block)
     })
     flush()
-}
-
-fun Sink.write(localAddress: IpAddress) {
-    for (i in 0..3) writeByte(localAddress.bytes[i])
 }
 
 suspend fun ByteReadChannel.readBgpMessage(block: suspend Source.(BgpType) -> Unit) {

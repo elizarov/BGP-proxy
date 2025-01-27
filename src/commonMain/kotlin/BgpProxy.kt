@@ -24,7 +24,7 @@ fun main(args: Array<String>) = runBlocking {
         val dnsClient = DnsClient(args.drop(1).toList(), selectorManager, verbose = true)
         dnsClient.initDnsClient()
         launch { dnsClient.runDnsClient() }
-        DnsProxy(selectorManager, dnsClient, verbose = true).runDnsProxy()
+        DnsProxy(dnsClient, selectorManager, verbose = true).runDnsProxy()
         return@runBlocking
     }
     val log = Log("main")
@@ -36,17 +36,26 @@ fun main(args: Array<String>) = runBlocking {
 
     log("STARTED with local $endpoint")
 
-    val dnsClient = if (nameservers.isEmpty()) null else DnsClient(nameservers, selectorManager)
-    val dnsProxy = dnsClient?.let { DnsProxy(selectorManager, it) }
+    val dnsProxy = if (nameservers.isEmpty()) null else
+        DnsProxy(DnsClient(nameservers, selectorManager), selectorManager)
     val bgpClientManager = BgpClientManager(this, endpoint, selectorManager)
-    val hostResolver = HostResolver(this, dnsClient)
+    val resolverFactory =
+        if (dnsProxy == null) {
+            // create one native resolver
+            val nativeResolver = newNativeResolver()
+            // and use it for all resolutions
+            ResolverFactory { nativeResolver }
+        } else {
+            ResolverFactory { host: String ->
+                Resolver { host -> dnsProxy.dnsClient.resolve(host) }
+            }
+        }
+    val hostResolver = HostResolver(this, resolverFactory)
     val localCommunities = setOf(BgpCommunity(endpoint.autonomousSystem, 0u))
 
-    if (dnsClient != null) {
-        dnsClient.initDnsClient()
-        launch { dnsClient.runDnsClient() }
-    }
     if (dnsProxy != null) {
+        dnsProxy.dnsClient.initDnsClient()
+        launch { dnsProxy.dnsClient.runDnsClient() }
         launch { dnsProxy.runDnsProxy() }
     }
 
@@ -59,7 +68,7 @@ fun main(args: Array<String>) = runBlocking {
                     ResolvedConfigPrefixes(op, mapOf(addressRange to localCommunities))
                 )
                 is DnsHostName -> hostResolver.resolveFlow(addressRange.host).map { list ->
-                    ResolvedConfigPrefixes(op, list.associateWith { localCommunities })
+                    ResolvedConfigPrefixes(op, list.associate { it.toIpAddressPrefix() to localCommunities })
                 }
                 is BgpRemoteSource -> bgpClientManager.clientFlow(addressRange.host).map { bgpState ->
                     ResolvedConfigPrefixes(op, bgpState.prefixes, bgpSource = true)

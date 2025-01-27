@@ -9,8 +9,8 @@ import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource
 
 class DnsProxy(
+    val dnsClient: DnsClient,
     private val selectorManager: SelectorManager,
-    private val dnsClient: DnsClient,
     private val verbose: Boolean = false
 ) {
     private val log = Log("DnsProxy")

@@ -4,10 +4,10 @@ import java.net.InetAddress
 
 actual fun nativeResolveHostAddr(host: String): ResolveResult {
     try {
-        val list = ArrayList<IpAddressPrefix>()
+        val list = ArrayList<IpAddress>()
         for (addr: InetAddress in InetAddress.getAllByName(host)) {
             if (addr !is Inet4Address) continue
-            list += IpAddressPrefix(prefix = addr.address)
+            list += addr.address.toIpAddress()
         }
         return ResolveResult.Ok(list)
     } catch (e: Exception) {

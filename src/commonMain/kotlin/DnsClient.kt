@@ -9,14 +9,10 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.io.IOException
 import kotlin.random.Random
+import kotlin.time.Duration.Companion.seconds
 
 private const val DNS_CLIENT_PRIMARY_TIMEOUT = 1000L
 private const val DNS_CLIENT_REQUEST_TIMEOUT = 5000L
-
-sealed class DnsResolveResult {
-    data class Ok(val list: List<IpAddress>, val ttl: UInt) : DnsResolveResult()
-    data class Err(val message: String) : DnsResolveResult()
-}
 
 class DnsClient(
     nameservers: List<String>,
@@ -65,15 +61,15 @@ class DnsClient(
         }
     }
 
-    suspend fun resolve(host: String): DnsResolveResult {
-        val name = host.toDnsName() ?: return DnsResolveResult.Err("Empty host name")
+    suspend fun resolve(host: String): ResolveResult {
+        val name = host.toDnsName() ?: return ResolveResult.Err("Empty host name")
         val question = DnsQuestion(name, DnsType.A.code, DnsClass.IN.code)
         val flags = DnsFlag.RD.value(1).toUShort()
-        val response = query(flags, question) ?: return DnsResolveResult.Err("Timeout")
+        val response = query(flags, question) ?: return ResolveResult.Err("Timeout")
         val a = response.answer.filter { it.aType == DnsType.A.code && it.aClass == DnsClass.IN.code }
-        if (a.isEmpty()) return DnsResolveResult.Err("No A records found")
+        if (a.isEmpty()) return ResolveResult.Err("No A records found")
         val ttl = response.answer.minOf { it.ttl } // min of all TTLs, including CNAMEs
-        return DnsResolveResult.Ok(a.map { it.rData as IpAddress }, ttl)
+        return ResolveResult.Ok(a.map { it.rData as IpAddress }, ttl.toLong().seconds)
     }
 
     suspend fun query(flags: UShort, question: DnsQuestion): DnsMessage? {

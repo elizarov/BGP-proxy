@@ -170,8 +170,8 @@ sealed class DnsDataType<T : DnsData> {
         override fun writeImpl(packet: DnsPacketBuilder, data: DnsName) { packet.writeDnsName(data) }
     }
     object Address : DnsDataType<IpAddress>() {
-        override fun readFrom(packet: DnsPacket, size: Int): IpAddress = IpAddress(packet.readByteArray(4))
-        override fun writeImpl(packet: DnsPacketBuilder, data: IpAddress) { packet.write(data.bytes) }
+        override fun readFrom(packet: DnsPacket, size: Int): IpAddress = IpAddress(packet.readUInt().toInt())
+        override fun writeImpl(packet: DnsPacketBuilder, data: IpAddress) { packet.writeUInt(data.bits.toUInt()) }
     }
     object SOA : DnsDataType<DnsSoaData>() {
         override fun readFrom(packet: DnsPacket, size: Int): DnsSoaData = packet.readSoaData()
