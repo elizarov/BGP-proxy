@@ -98,7 +98,9 @@ class DnsClient(
 
     suspend fun query(flags: UShort, question: DnsQuestion, src: DnsQuerySource): DnsMessage? {
         val response = queryImpl(flags, question)
-        if (question.qType == DnsType.A.code && question.qClass == DnsClass.IN.code && response != null) {
+        if (question.qType == DnsType.A.code && question.qClass == DnsClass.IN.code &&
+            DnsFlag.RD.get(flags) == 1 && response != null)
+        {
             val result = response.toResolveResult()
             saveResolveResult(question, result, src, delayUpdated = true)
         }
