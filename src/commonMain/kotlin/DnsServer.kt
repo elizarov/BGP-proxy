@@ -5,8 +5,8 @@ import io.ktor.utils.io.core.*
 import kotlinx.coroutines.*
 import kotlinx.io.*
 
-class DnsQuerySource(val protocol: String, val address: SocketAddress) {
-    override fun toString(): String = "$protocol$address"
+class DnsQuerySource(val protocol: String, val address: InetSocketAddress) {
+    override fun toString(): String = "$protocol/${address.hostname}:${address.port}"
 }
 
 class DnsServer(
@@ -30,7 +30,7 @@ class DnsServer(
                     continue
                 }
                 launch {
-                    val response = onQuery(DnsQuerySource("UDP", queryDatagram.address), query)
+                    val response = onQuery(DnsQuerySource("UDP", queryDatagram.address as InetSocketAddress), query)
                     if (response != null) {
                         val responsePacket = response.buildMessagePacket()
                         val responseDatagram = Datagram(responsePacket, queryDatagram.address)
@@ -56,7 +56,7 @@ class DnsServer(
                                 val size = input.readShort().toUShort().toInt()
                                 val query = input.readByteArray(size).readDnsMessage()
                                 launch {
-                                    val response = onQuery(DnsQuerySource("TCP", tcpSocket.remoteAddress), query)
+                                    val response = onQuery(DnsQuerySource("TCP", tcpSocket.remoteAddress as InetSocketAddress), query)
                                     if (response != null) {
                                         val responsePacket = response.buildMessagePacket()
                                         val fullPacket = buildPacket {
