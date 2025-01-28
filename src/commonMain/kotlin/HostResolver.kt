@@ -4,11 +4,12 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.*
 import kotlin.time.*
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource.*
 
-private val keepAlive = 2.minutes // todo: 1.hours
+private val keepAlive = 1.hours
 private val stopAfter = 10.seconds
 private val nativeResolveTtl = 1.seconds
 private val resolveAgainOnError = 3.seconds
