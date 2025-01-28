@@ -4,23 +4,33 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.sync.*
 import kotlin.time.*
-import kotlin.time.Duration.Companion.hours
-import kotlin.time.Duration.Companion.seconds
 import kotlin.time.Duration.Companion.minutes
+import kotlin.time.Duration.Companion.seconds
 import kotlin.time.TimeSource.*
 
-private val keepAlive = 1.hours
+private val keepAlive = 2.minutes // todo: 1.hours
 private val stopAfter = 10.seconds
 private val nativeResolveTtl = 1.seconds
 private val resolveAgainOnError = 3.seconds
 
-val maxResolvePeriod = 1.minutes
+val maxResolvePeriod = 1.minutes // shall periodically send with this period
 
 sealed class ResolveResult {
+    init {
+        require(keepAlive >= maxResolvePeriod * 2)
+    }
+
     abstract val ttl: Duration
-    data class Ok(val addresses: Collection<IpAddress>, override val ttl: Duration = nativeResolveTtl) : ResolveResult()
-    data class Err(val message: String, override val ttl: Duration = resolveAgainOnError) : ResolveResult()
-    data object Periodic : ResolveResult() { override val ttl: Duration = maxResolvePeriod }
+    data class Ok(val addresses: Collection<IpAddress>, override val ttl: Duration = nativeResolveTtl) : ResolveResult() {
+        override fun toString(): String = buildString {
+            appendListForLog(addresses)
+            append(" TTL:")
+            append(ttl.inWholeSeconds)
+        }
+    }
+    data class Err(val message: String, override val ttl: Duration = resolveAgainOnError) : ResolveResult() {
+        override fun toString(): String = message
+    }
 }
 
 fun interface ResolverFactory {
@@ -61,9 +71,8 @@ class HostResolver(
                     is ResolveResult.Ok -> {
                         for (address in result.addresses) known[address] = now
                     }
-                    is ResolveResult.Periodic -> {}
                 }
-                known.values.removeAll { mark -> mark.elapsedNow() > keepAlive }
+                known.values.removeAll { mark -> now > mark + keepAlive }
                 val current = known.keys.sorted().toSet()
                 if (current != lastResult) {
                     val added = current.minus(lastResult)

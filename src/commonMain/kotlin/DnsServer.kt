@@ -6,7 +6,7 @@ import kotlinx.coroutines.*
 import kotlinx.io.*
 
 class DnsQuerySource(val protocol: String, val address: SocketAddress) {
-    override fun toString(): String = "$protocol $address"
+    override fun toString(): String = "$protocol$address"
 }
 
 class DnsServer(
