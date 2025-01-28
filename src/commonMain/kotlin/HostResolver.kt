@@ -12,15 +12,11 @@ import kotlin.time.TimeSource.*
 private val keepAlive = 1.hours
 private val stopAfter = 10.seconds
 private val nativeResolveTtl = 1.seconds
-private val resolveAgainOnError = 3.seconds
+private val resolveAgainOnError = 5.seconds
 
 val maxResolvePeriod = 1.minutes // shall periodically send with this period
 
 sealed class ResolveResult {
-    init {
-        require(keepAlive >= maxResolvePeriod * 2)
-    }
-
     abstract val ttl: Duration
     data class Ok(val addresses: Collection<IpAddress>, override val ttl: Duration = nativeResolveTtl) : ResolveResult() {
         override fun toString(): String = buildString {
@@ -43,6 +39,10 @@ class HostResolver(
     private val coroutineScope: CoroutineScope,
     private val resolverFactory: ResolverFactory
 ) {
+    init {
+        require(keepAlive >= maxResolvePeriod * 2)
+    }
+
     private val mutex = Mutex()
     // mutations are protected with mutex
     private val flows = HashMap<String, Flow<Set<IpAddress>>>()

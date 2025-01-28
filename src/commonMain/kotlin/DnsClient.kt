@@ -82,9 +82,11 @@ class DnsClient(
     }
 
     fun resolveFlow(host: String): Flow<ResolveResult> = flow {
-        val result = resolve(host)
-        emit(result)
-        delay(result.ttl.coerceAtMost(maxResolvePeriod))
+        while (true) {
+            val result = resolve(host)
+            emit(result)
+            delay(result.ttl.coerceAtMost(maxResolvePeriod))
+        }
     }
 
     private suspend fun resolve(host: String): ResolveResult {
