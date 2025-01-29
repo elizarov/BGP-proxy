@@ -42,7 +42,7 @@ enum class DnsFlag(val shift: Int, val bits: Int = 1) {
     RCODE(0, 4);
 
     fun get(flags: UShort): Int = (flags.toInt() shr shift) and ((1 shl bits) - 1)
-    fun value(x: Int) = x shl shift
+    fun value(x: Int): Int = x shl shift
 }
 
 enum class DnsRCode(val code: Int) {
@@ -215,7 +215,7 @@ fun UShort.toDnsClassString(): String {
     return "C$code"
 }
 
-class DnsQuestion(
+data class DnsQuestion(
     val qName: DnsName,
     val qType: UShort,
     val qClass: UShort
@@ -229,7 +229,7 @@ class DnsQuestion(
     }
 }
 
-class DnsAnswer(
+data class DnsAnswer(
     val name: DnsName,
     val aType: UShort,
     val aClass: UShort,

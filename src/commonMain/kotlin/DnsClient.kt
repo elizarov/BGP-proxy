@@ -18,7 +18,6 @@ import kotlinx.io.IOException
 import kotlin.random.Random
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.TimeSource
 
 private val dnsClientPrimaryTimeout = 1.seconds
 private val dnsClientSecondaryTimeout = 5.seconds
@@ -53,7 +52,7 @@ class DnsClient(
         launch {
             while (true) {
                 delay(periodicCacheCleanup)
-                cache.cleanup()
+                cache.cleanup(cacheExtraTtl)
             }
         }
         for (datagram in socket.incoming) {
@@ -93,20 +92,31 @@ class DnsClient(
         val name = host.toDnsName() ?: return ResolveResult.Err("Empty host name")
         val question = DnsQuestion(name, DnsType.A.code, DnsClass.IN.code)
         val flags = DnsFlag.RD.value(1).toUShort()
-        val result = queryImpl(flags, question).toResolveResult()
-        saveResolveResult(question, result)
-        return result
+        val response = queryImpl(flags, question)
+        if (response?.isResolveResponse(question) == false) return ResolveResult.Err("Unexpected response $response")
+        return saveResolveResult(question.qName, response)
     }
 
-    suspend fun query(flags: UShort, question: DnsQuestion, src: DnsQuerySource): DnsMessage? {
-        val response = queryImpl(flags, question)
-        if (question.qType == DnsType.A.code && question.qClass == DnsClass.IN.code &&
-            DnsFlag.RD.get(flags) == 1 && response != null)
-        {
-            val result = response.toResolveResult()
-            saveResolveResult(question, result, src, delayUpdated = true)
+    private fun DnsQuestion.isResolveQuestion(flags: UShort): Boolean =
+        qType == DnsType.A.code && qClass == DnsClass.IN.code && DnsFlag.RD.get(flags) == 1
+
+    private fun DnsMessage.isResolveResponse(question: DnsQuestion): Boolean =
+        this.question == question && DnsFlag.RA.get(flags) == 1 && DnsFlag.QR.get(flags) == 1
+
+    suspend fun query(id: UShort, flags: UShort, question: DnsQuestion, src: DnsQuerySource): DnsMessage? {
+        val isResolveQuestion = question.isResolveQuestion(flags)
+        if (isResolveQuestion) {
+            cache.getResolveAnswer(question.qName)?.let { answer ->
+                val responseFlags = (flags.toInt() or DnsFlag.RA.value(1) or DnsFlag.QR.value(1)).toUShort()
+                logResolveResult(src, question.qName, answer.toResolveResult())
+                return DnsMessage(id, responseFlags, question, answer)
+            }
         }
-        return response
+        val response = queryImpl(flags, question)
+        if (isResolveQuestion && response?.isResolveResponse(question) == true) {
+            saveResolveResult(question.qName, response, src, delayUpdated = true)
+        }
+        return response?.copy(id = id)
     }
 
     private suspend fun queryImpl(flags: UShort, question: DnsQuestion): DnsMessage? {
@@ -143,34 +153,43 @@ class DnsClient(
     }
 
     private suspend fun saveResolveResult(
-        question: DnsQuestion,
-        result: ResolveResult,
+        name: DnsName,
+        response: DnsMessage?,
         src: DnsQuerySource? = null,
         delayUpdated: Boolean = false
-    ) {
-        if (result !is ResolveResult.Ok) return
-        val expiration = TimeSource.Monotonic.markNow() + result.ttl + cacheExtraTtl
-        val hadUpdatedWildcards = cache.put(question.qName, DnsNameResolveCache.Entry(result.addresses.toSet(), expiration))
+    ): ResolveResult {
+        val result = response.toResolveResult()
+        if (response == null || result !is ResolveResult.Ok) return result
+        val hadUpdatedWildcards = cache.putResolveAnswer(name, response.answer, result)
         if (delayUpdated && hadUpdatedWildcards) {
             delay(delayUpdatedWildcardResponse)
         }
         if (src != null) {
-            buildString {
-                append(src)
-                append(": ")
-                append(question.qName)
-                append(": ")
-                append(result)
-                if (hadUpdatedWildcards) append(" (*)")
-            }.let { log(it) }
+            logResolveResult(src, name, result, if (hadUpdatedWildcards) " (*)" else " (+)")
         }
+        return result
     }
+
+    private fun logResolveResult(src: DnsQuerySource, name: DnsName, result: ResolveResult, suffix: String = "") {
+        buildString {
+            append(src)
+            append(": ")
+            append(name)
+            append(": ")
+            append(result)
+            append(suffix)
+        }.let { log(it) }
+    }
+}
+
+private fun List<DnsAnswer>.toResolveResult(): ResolveResult {
+    val a = filter { it.aType == DnsType.A.code && it.aClass == DnsClass.IN.code }
+    if (a.isEmpty()) return ResolveResult.Err("No IPs found")
+    val ttl = minOf { it.ttl } // min of all TTLs, including CNAMEs
+    return ResolveResult.Ok(a.map { it.rData as IpAddress }, ttl.toLong().seconds)
 }
 
 private fun DnsMessage?.toResolveResult(): ResolveResult {
     if (this == null) return return ResolveResult.Err("Timeout")
-    val a = answer.filter { it.aType == DnsType.A.code && it.aClass == DnsClass.IN.code }
-    if (a.isEmpty()) return ResolveResult.Err("No IPs found")
-    val ttl = answer.minOf { it.ttl } // min of all TTLs, including CNAMEs
-    return ResolveResult.Ok(a.map { it.rData as IpAddress }, ttl.toLong().seconds)
+    return answer.toResolveResult()
 }

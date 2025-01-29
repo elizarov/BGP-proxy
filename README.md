@@ -15,9 +15,9 @@ of IP address prefix sets and is processes from top to bottom. Each line starts 
 
 * `bgp:<host>` another BGP server as a source of IP address prefixes.
 * `<ip-prefix>/<bits>` an ip address mask.
-* `<ip-v4-address>` a literal numeric IP address.
-* `<dns-name>` a DNS name. It gets resolved periodically and the IP addresses it resolves to are used.
-* `*.<dns-suffix>` matches all DNS names that end with a specified suffix. It is supported only in DNS proxy mode. 
+* `<ip-address>` a literal numeric IPv4 address.
+* `<host-name>` a host name. It gets resolved periodically via DNS and the IP addresses it resolves to are used.
+* `*.<host-name-suffix>` matches all host names that end with a specified suffix. It is supported only in DNS proxy mode. 
 
 Configuration file gets automatically reloaded from disk when its change is detected. No restart is needed.
 
@@ -25,13 +25,33 @@ Configuration file gets automatically reloaded from disk when its change is dete
 
 When launched with DNS proxy mode (see [command line parameters](#command-line-parameters)) it additionally works
 as a DNS proxy, accepting DNS requests on port 53 over both UDP and TCP. It forwards all supported requrests to the
-downstream nameservers and returns them back without changes. It caches results, but this cache is not used for
-the purpose of answering DNS queries. The cache is used to support `*.<dns-suffix>` wildcard as a source of IP 
-address prefixes. All the matching DNS queries that go via the DNS proxy get their resolved IP addresses added.
+downstream nameservers and returns them back without changes. It caches successful results of `A` queries. 
+The cache is used to support `*.<dns-suffix>` wildcard as a source of IP  address prefixes. 
+All the matching DNS queries that go via the DNS proxy get their resolved IP addresses added.
+
+The cache is also used to respond to further `A` queries until the records expire. The DNS names from the 
+configuration are continuously resolved on expiration and saved to cache, thus the cache for those names is 
+always ready. This guarantees that the DNS query results for those host names are consistent with the IP addresses 
+that are reported via BGP. 
 
 The only supported DNS types that can go though the proxy are: 
 `A`, `NS`, `CNAME`, `SOA`, `PTR`, `TXT`, `AAAA`, `SRV`, `SVCB`, `HTTPS`. 
-Among those, only `A` gets interpreted and cached for the purpose of supporting wildcard DNS references. 
+Among those, only `A` gets interpreted and cached. 
+
+## DNS proxy logs
+
+DNS proxy logs successful responses on the IP addresses resolution (`A` queries) that go through it in the following way:
+
+```
+[Dns]: <proto>/<src>: <host-name>: <ip-addresses> TTL:<ttl> <suffix>
+```
+
+* `<proto>` is the protocol over which the request came: `UDP` or `TCP`.
+* `<src>` the requesting host and port.
+* `<host-name>` the requested host name to resolve.
+* `<ttl>` resulting record TTL is seconds
+* `<suffix>` is `(+)` when the entry was stored to cache, 
+   `(*)` when it also updated any wildcard configuration records, empty when the response was sent from cache.
 
 ## Command line parameters
 
@@ -50,6 +70,9 @@ Even if resolved set of IP addresses for a particular DNS name changes often, th
 is being kept. This also applies to IP addresses that correspond to wildcard DNS names that are discovered via DNS proxy. 
 
 Non-wildcard DNS named are resolved again as soon as their TTL expires, but at least **every minute**. 
+
+There is **200 ms** delay in sending response to DNS queries that had updated any wildcard configuration record (these
+are logged with `(*)` suffix) so that there is time for BGP status update to propagate before the DNS response is sent. 
 
 ## Relevant standards
 

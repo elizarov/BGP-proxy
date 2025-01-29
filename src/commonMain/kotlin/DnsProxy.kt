@@ -18,8 +18,7 @@ class DnsProxy(
             if (query.isQuery && query.opCode == 0 && query.rCode == 0 && query.question != null &&
                 query.question.qType.isDnsTypeSupported() && query.question.qClass == DnsClass.IN.code
             ) {
-                val response = dnsClient.query(query.flags, query.question, src)
-                response?.copy(id = query.id)
+                dnsClient.query(query.id, query.flags, query.question, src)
             } else {
                 log("Unsupported query: $query")
                 DnsMessage(query.id, DnsRCode.NotImplemented.toResponseFlags())

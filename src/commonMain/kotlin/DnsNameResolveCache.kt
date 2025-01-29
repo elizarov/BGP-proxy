@@ -2,11 +2,14 @@ import kotlinx.coroutines.channels.SendChannel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlin.collections.ArrayList
+import kotlin.time.Duration
 import kotlin.time.TimeSource
 
 class DnsNameResolveCache {
-    data class Entry(
+    private data class Entry(
+        val answer: List<DnsAnswer>,
         val ips: Set<IpAddress>,
+        val time: TimeSource.Monotonic.ValueTimeMark,
         val expiration: TimeSource.Monotonic.ValueTimeMark
     )
 
@@ -35,16 +38,20 @@ class DnsNameResolveCache {
         }
 
         // returns true if updated anything
-        fun cleanupImpl(now: TimeSource.Monotonic.ValueTimeMark, result: ArrayList<Pair<SendChannel<ResolveResult>, ResolveResult>>): Boolean {
+        fun cleanupImpl(
+            now: TimeSource.Monotonic.ValueTimeMark,
+            cacheExtraTll: Duration,
+            result: ArrayList<Pair<SendChannel<ResolveResult>, ResolveResult>>
+        ): Boolean {
             var updated = false
             val it = map.values.iterator()
             while (it.hasNext()) {
                 val node = it.next()
-                if (node.cleanupImpl(now, result)) updated = true
+                if (node.cleanupImpl(now, cacheExtraTll, result)) updated = true
                 if (node.isEmpty) it.remove()
             }
             entry?.expiration?.let { expiration ->
-                if (now > expiration) {
+                if (now > expiration + cacheExtraTll) {
                     entry = null
                     updated = true
                 }
@@ -61,14 +68,26 @@ class DnsNameResolveCache {
     private val mutex = Mutex()
     private val root = Node(null)
 
-    private val nodeWalkAction = { label: Label, node: Node ->
+    private val nodeCreateWalkAction = { label: Label, node: Node ->
         node.map.getOrPut(label) { Node(node) }
     }
 
-    private fun getNode(name: DnsName?): Node = reverseNameWalk(name, root, nodeWalkAction)
+    private val nodeOrNullWalkAction = { label: Label, node: Node? ->
+        node?.map?.get(label)
+    }
+
+    private fun getNode(name: DnsName?): Node = reverseNameWalk(name, root, nodeCreateWalkAction)
+    private fun getNodeOrNull(name: DnsName?): Node? = reverseNameWalk(name, root, nodeOrNullWalkAction)
 
     // returns true if it has updated any wildcards
-    suspend fun put(name: DnsName, entry: Entry): Boolean  {
+    suspend fun putResolveAnswer(
+        name: DnsName,
+        answer: List<DnsAnswer>,
+        result: ResolveResult.Ok
+    ): Boolean  {
+        val now = TimeSource.Monotonic.markNow()
+        val expiration = now + result.ttl
+        val entry = Entry(answer, result.addresses.toSet(), now, expiration)
         var result: ArrayList<Pair<SendChannel<ResolveResult>, ResolveResult>>? = null
         mutex.withLock {
             val node = getNode(name)
@@ -104,6 +123,14 @@ class DnsNameResolveCache {
         return true
     }
 
+    suspend fun getResolveAnswer(name: DnsName): List<DnsAnswer>? = mutex.withLock {
+        val entry = getNodeOrNull(name)?.entry ?: return@withLock null
+        val now = TimeSource.Monotonic.markNow()
+        if (now > entry.expiration) return@withLock null
+        val adjustTtl = (now - entry.time).inWholeSeconds.coerceAtLeast(0).toUInt()
+        entry.answer.map { it.copy(ttl = if (it.ttl > adjustTtl) it.ttl - adjustTtl else 1u) }
+    }
+
     suspend fun addPrefixFlowChannel(name: DnsName?, channel: SendChannel<ResolveResult>): ResolveResult = mutex.withLock {
         val node = getNode(name)
         val channels = node.channels ?:
@@ -117,11 +144,11 @@ class DnsNameResolveCache {
         check(node.channels?.remove(channel) == true) { "Removing missing channel for $name" }
     }
 
-    suspend fun cleanup() {
+    suspend fun cleanup(cacheExtraTtl: Duration) {
         val now = TimeSource.Monotonic.markNow()
         val result = ArrayList<Pair<SendChannel<ResolveResult>, ResolveResult>>()
         mutex.withLock {
-            root.cleanupImpl(now, result)
+            root.cleanupImpl(now, cacheExtraTtl, result)
         }
         for ((channel, resolve) in result) {
             channel.send(resolve)
