@@ -79,3 +79,69 @@ are logged with `(*)` suffix) so that there is time for BGP status update to pro
 * [RFC4271](https://www.rfc-editor.org/rfc/rfc4271) A Border Gateway Protocol 4 (BGP-4)
 * [RFC1997](https://www.rfc-editor.org/rfc/rfc1997) BGP Communities Attribute
 * [RFC1035](https://www.rfc-editor.org/rfc/rfc1035) Domain Names - Implementation and Specification
+
+## Building and deploying
+
+Build the Linux binary with
+
+```bash
+./gradlew linuxX64MainBinaries 
+```
+
+You'll find the compiled binary at 
+[build/bin/linuxX64/bgpProxyReleaseExecutable/bgp-proxy.kexe](build/bin/linuxX64/bgpProxyReleaseExecutable/bgp-proxy.kexe).
+
+To deploy on Ubuntu:
+
+1. Copy `bgp-proxy.kexe` to your home directory.
+2. Create `bgp-proxy.cfg` configuration file there (use the [example](bgp-proxy.cfg)).
+3. Create `bgp-proxy.sh` shell script to run it.
+ 
+Here is the example script assuming that your user is `root`, the home directory is `/root`, you'll use
+autonomous system 64512 (any number from 64512 to 65534 comes from the private ASN range and can be safely used), 
+and you're using Google DNS servers:
+
+```bash
+#!/bin/bash
+/root/bgp-proxy.kexe <local-ip-address> 64512 /root/bgp-proxy.cfg 8.8.8.8 8.8.4.4
+```
+
+Then make it executable:
+
+```bash
+chmod +x bgp-proxy.sh
+```
+
+Create `/etc/systemd/system/bgp-proxy.service` to run to it as a service:
+
+```
+[Unit]
+Description=BGP proxy service
+After=network.target
+
+[Service]
+Type=simple
+Restart=always
+RestartSec=1
+User=root
+ExecStart=/root/bgp-proxy.sh
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=bgp-proxy
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Enable and start the service:
+
+```bash
+systemctl enable bgp-proxy
+systemctl start bgp-proxy
+```
+
+You can watch the log using:
+
+```bash
+journalctl -u bgp-proxy -f
+```
