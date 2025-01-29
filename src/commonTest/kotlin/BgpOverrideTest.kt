@@ -11,6 +11,7 @@ class BgpOverrideTest {
             ConfigItem(ConfigOp.MINUS, IpAddressPrefix(16, byteArrayOf(192.toByte(), 168.toByte()))),
             ConfigItem(ConfigOp.PLUS, IpAddressPrefix(32, byteArrayOf(1, 1, 1, 1))),
             ConfigItem(ConfigOp.PLUS, DnsHostName("pbs.twimg.com")),
+            ConfigItem(ConfigOp.PLUS, DnsHostName("*.googlevideo.com")),
             ConfigItem(ConfigOp.MINUS, DnsHostName("qwerty"))
         )
         assertEquals(expectedItems, items)

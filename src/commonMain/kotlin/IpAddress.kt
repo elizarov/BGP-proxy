@@ -26,7 +26,7 @@ fun Sink.write(address: IpAddress) {
 private fun ByteArray.toAddressBits(): Int {
     require(size == 4)
     var address = 0
-    for (i in 0 until 3) {
+    for (i in 0..3) {
         address = address or ((get(i).toInt() and 0xff) shl ((3 - i) * 8))
     }
     return address
