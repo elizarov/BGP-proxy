@@ -64,6 +64,7 @@ class DnsServer(
                                             writePacket(responsePacket)
                                         }
                                         output.writePacket(fullPacket)
+                                        output.flush()
                                     }
                                 }
                             }
