@@ -1,3 +1,6 @@
+import io.ktor.network.sockets.Datagram
+import io.ktor.network.sockets.InetSocketAddress
+import io.ktor.network.sockets.SocketAddress
 import kotlinx.coroutines.delay
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.seconds
@@ -30,3 +33,7 @@ suspend fun <T> retryOperation(log: Log, description: String, interval: Duration
         delay(interval)
     }
 }
+
+fun SocketAddress.toLogString(): String =
+    (this as? InetSocketAddress)?.let { "${it.hostname}:${it.port}" } ?: toString()
+

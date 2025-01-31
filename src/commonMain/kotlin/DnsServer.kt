@@ -6,7 +6,7 @@ import kotlinx.coroutines.*
 import kotlinx.io.*
 
 class DnsQuerySource(val protocol: String, val address: InetSocketAddress) {
-    override fun toString(): String = "$protocol/${address.hostname}:${address.port}"
+    override fun toString(): String = "$protocol/${address.hostname}"
 }
 
 class DnsServer(
@@ -26,7 +26,7 @@ class DnsServer(
                     queryDatagram.packet.readDnsMessage()
                 } catch (e: IOException) {
                     // ignore broken datagrams & continue
-                    log("Broken datagram from ${queryDatagram.address}: $e")
+                    log("Broken datagram from ${queryDatagram.address.toLogString()}: $e")
                     continue
                 }
                 launch {
@@ -70,12 +70,12 @@ class DnsServer(
                             }
                         }
                     } catch (e: IOException) {
-                        log("Error in connection from ${tcpSocket.remoteAddress}: $e")
+                        log("Error in connection from ${tcpSocket.remoteAddress.toLogString()}: $e")
                     }
                     try {
                         tcpSocket.close()
                     } catch (e: IOException) {
-                        log("Error while closing connection from ${tcpSocket.remoteAddress}: $e")
+                        log("Error while closing connection from ${tcpSocket.remoteAddress.toLogString()}: $e")
                     }
                 }
             }

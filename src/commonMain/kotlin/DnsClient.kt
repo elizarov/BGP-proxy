@@ -60,17 +60,17 @@ class DnsClient(
                 datagram.packet.readDnsMessage()
             } catch (e: IOException) {
                 // ignore broken datagrams & continue
-                log("Broken datagram from ${datagram.addressToString()}: $e")
+                log("Broken datagram from ${datagram.address.toLogString()}: $e")
                 continue
 
             }
             if (response.isQuery) {
-                log("Ignoring DNS query from ${datagram.addressToString()}")
+                log("Ignoring DNS query from ${datagram.address.toLogString()}")
                 continue
             }
             val deferred = mutex.withLock { requests.remove(response.id) }
             if (deferred == null) {
-                log("Unexpected response from ${datagram.addressToString()} for ${response.question} (too late?)")
+                log("Unexpected response from ${datagram.address.toLogString()} for ${response.question} (too late?)")
                 continue
             }
             if (verbose) {
@@ -79,9 +79,6 @@ class DnsClient(
             deferred.complete(response)
         }
     }
-
-    private fun Datagram.addressToString(): String =
-        (address as? InetSocketAddress)?.let { "${it.hostname}:${it.port}" } ?: address.toString()
 
     fun resolveFlow(host: String): Flow<ResolveResult> = flow {
         while (true) {
