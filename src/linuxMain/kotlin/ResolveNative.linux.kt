@@ -2,8 +2,10 @@
 
 import kotlinx.cinterop.*
 import platform.posix.*
+import kotlin.time.TimeSource
 
 actual fun nativeResolveHostAddr(host: String): ResolveResult {
+    val start = TimeSource.Monotonic.markNow()
     val list = ArrayList<IpAddress>()
     memScoped {
         val hints: addrinfo = alloc()
@@ -24,5 +26,5 @@ actual fun nativeResolveHostAddr(host: String): ResolveResult {
         }
         freeaddrinfo(res.value)
     }
-    return ResolveResult.Ok(list)
+    return ResolveResult.Ok(list, elapsed = start.elapsedNow())
 }

@@ -43,15 +43,16 @@ Among those, only `A` gets interpreted and cached.
 DNS proxy logs successful responses on the IP addresses resolution (`A` queries) that go through it in the following way:
 
 ```
-[Dns]: <proto>/<src>: <host-name>: <ip-addresses> TTL:<ttl> <suffix>
+[Dns]: <proto>/<src>: <host-name>: <ip-addresses> TTL:<ttl> {<time> ms}<suffix>
 ```
 
 * `<proto>` is the protocol over which the request came: `UDP` or `TCP`.
 * `<src>` the requesting host and port.
 * `<host-name>` the requested host name to resolve.
-* `<ttl>` resulting record TTL is seconds
-* `<suffix>` is `(+)` when the entry was stored to cache, 
-   `(*)` when it also updated any wildcard configuration records, empty when the response was sent from cache.
+* `<ttl>` resulting record TTL is seconds.
+* `<time>` how long it took for upstream nameserver to respond (in ms).
+* `<suffix>` is `+` when the entry was stored to cache, 
+   `*` when it also updated any wildcard configuration records, empty when the response was sent from cache.
 
 ## Command line parameters
 

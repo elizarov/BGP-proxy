@@ -1,21 +1,11 @@
-import io.ktor.network.selector.SelectorManager
-import io.ktor.network.sockets.BoundDatagramSocket
-import io.ktor.network.sockets.Datagram
-import io.ktor.network.sockets.InetSocketAddress
-import io.ktor.network.sockets.aSocket
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.NonCancellable
-import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.io.IOException
-import kotlin.random.Random
+import io.ktor.network.selector.*
+import io.ktor.network.sockets.*
+import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.sync.*
+import kotlinx.io.*
+import kotlin.random.*
+import kotlin.time.*
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.seconds
 
@@ -92,9 +82,10 @@ class DnsClient(
         val name = host.toDnsName() ?: return ResolveResult.Err("Empty host name")
         val question = DnsQuestion(name, DnsType.A.code, DnsClass.IN.code)
         val flags = DnsFlag.RD.value(1).toUShort()
+        val startMark = TimeSource.Monotonic.markNow()
         val response = queryImpl(flags, question)
         if (response?.isResolveResponse(question) == false) return ResolveResult.Err("Unexpected response $response")
-        return saveResolveResult(question.qName, response)
+        return saveResolveResult(question.qName, response, startMark = startMark)
     }
 
     private fun DnsQuestion.isResolveQuestion(flags: UShort): Boolean =
@@ -112,9 +103,10 @@ class DnsClient(
                 return DnsMessage(id, responseFlags, question, answer)
             }
         }
+        val startMark = TimeSource.Monotonic.markNow()
         val response = queryImpl(flags, question)
         if (isResolveQuestion && response?.isResolveResponse(question) == true) {
-            saveResolveResult(question.qName, response, src, delayUpdated = true)
+            saveResolveResult(question.qName, response, src, delayUpdated = true, startMark = startMark)
         }
         return response?.copy(id = id)
     }
@@ -156,16 +148,18 @@ class DnsClient(
         name: DnsName,
         response: DnsMessage?,
         src: DnsQuerySource? = null,
-        delayUpdated: Boolean = false
+        delayUpdated: Boolean = false,
+        startMark: TimeSource.Monotonic.ValueTimeMark? = null
     ): ResolveResult {
-        val result = response.toResolveResult()
+        val elapsed = startMark?.elapsedNow() ?: Duration.ZERO
+        val result = response.toResolveResult(elapsed)
         if (response == null || result !is ResolveResult.Ok) return result
         val hadUpdatedWildcards = cache.putResolveAnswer(name, response.answer, result)
         if (delayUpdated && hadUpdatedWildcards) {
             delay(delayUpdatedWildcardResponse)
         }
         if (src != null) {
-            logResolveResult(src, name, result, if (hadUpdatedWildcards) " (*)" else " (+)")
+            logResolveResult(src, name, result, if (hadUpdatedWildcards) "*" else "+")
         }
         return result
     }
@@ -182,14 +176,14 @@ class DnsClient(
     }
 }
 
-private fun List<DnsAnswer>.toResolveResult(): ResolveResult {
+private fun List<DnsAnswer>.toResolveResult(elapsed: Duration = Duration.ZERO): ResolveResult {
     val a = filter { it.aType == DnsType.A.code && it.aClass == DnsClass.IN.code }
     if (a.isEmpty()) return ResolveResult.Err("No IPs found")
     val ttl = minOf { it.ttl } // min of all TTLs, including CNAMEs
-    return ResolveResult.Ok(a.map { it.rData as IpAddress }, ttl.toLong().seconds)
+    return ResolveResult.Ok(a.map { it.rData as IpAddress }, ttl.toLong().seconds, elapsed)
 }
 
-private fun DnsMessage?.toResolveResult(): ResolveResult {
+private fun DnsMessage?.toResolveResult(elapsed: Duration): ResolveResult {
     if (this == null) return return ResolveResult.Err("Timeout")
-    return answer.toResolveResult()
+    return answer.toResolveResult(elapsed)
 }

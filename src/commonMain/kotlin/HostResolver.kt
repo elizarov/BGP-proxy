@@ -18,12 +18,19 @@ val maxResolvePeriod = 1.minutes // shall periodically send with this period
 
 sealed class ResolveResult {
     abstract val ttl: Duration
-    data class Ok(val addresses: Collection<IpAddress>, override val ttl: Duration = nativeResolveTtl) : ResolveResult() {
+    data class Ok(
+        val addresses: Collection<IpAddress>,
+        override val ttl: Duration = nativeResolveTtl,
+        val elapsed: Duration = Duration.ZERO // time it took to wait for result
+    ) : ResolveResult() {
         override fun toString(): String = buildString {
             appendListForLog(addresses)
             append(" TTL:")
             append(ttl.inWholeSeconds)
+            append(elapsedLogString())
         }
+
+        fun elapsedLogString() = if (elapsed > Duration.ZERO) " {${elapsed.inWholeMilliseconds} ms}" else ""
     }
     data class Err(val message: String, override val ttl: Duration = resolveAgainOnError) : ResolveResult() {
         override fun toString(): String = message
@@ -62,6 +69,7 @@ class HostResolver(
             var lastError: String? = null
             resolver.collect { result ->
                 val now = Monotonic.markNow()
+                var ipsChanged = false
                 when (result) {
                     is ResolveResult.Err -> {
                         if (result.message != lastError) {
@@ -70,10 +78,16 @@ class HostResolver(
                         }
                     }
                     is ResolveResult.Ok -> {
-                        for (address in result.addresses) known[address] = now
+                        for (address in result.addresses) {
+                            known[address] = now
+                            ipsChanged = true
+                        }
                     }
                 }
-                known.values.removeAll { mark -> now > mark + keepAlive }
+                if (known.values.removeAll { mark -> now > mark + keepAlive }) {
+                    ipsChanged = true
+                }
+                if (!ipsChanged) return@collect // continue if nothing changed
                 val current = known.keys.sorted().toSet()
                 if (current != lastResult) {
                     val added = current.minus(lastResult)
@@ -92,6 +106,9 @@ class HostResolver(
                         append(" = ")
                         append(current.size)
                         append(" IPs")
+                        if (result is ResolveResult.Ok) {
+                            append(result.elapsedLogString())
+                        }
                     }.let { log(it) }
                     emit(current)
                     lastResult = current
