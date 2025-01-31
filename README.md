@@ -51,8 +51,8 @@ DNS proxy logs successful responses on the IP addresses resolution (`A` queries)
 * `<host-name>` the requested host name to resolve.
 * `<ttl>` resulting record TTL is seconds.
 * `<time>` how long it took for upstream nameserver to respond (in ms).
-* `<suffix>` is `+` when the entry was stored to cache, 
-   `*` when it also updated any wildcard configuration records, empty when the response was sent from cache.
+* `<suffix>` is `*` when it had updated any wildcard configuration records.
+* There is no time nor suffix, when the entry was served from cache.
 
 ## Command line parameters
 

@@ -1,8 +1,6 @@
-import io.ktor.network.sockets.Datagram
-import io.ktor.network.sockets.InetSocketAddress
-import io.ktor.network.sockets.SocketAddress
-import kotlinx.coroutines.delay
-import kotlin.time.Duration
+import io.ktor.network.sockets.*
+import kotlinx.coroutines.*
+import kotlin.time.*
 import kotlin.time.Duration.Companion.seconds
 
 class Log(private val id: String) {

@@ -79,16 +79,18 @@ class DnsNameResolveCache {
     private fun getNode(name: DnsName?): Node = reverseNameWalk(name, root, nodeCreateWalkAction)
     private fun getNodeOrNull(name: DnsName?): Node? = reverseNameWalk(name, root, nodeOrNullWalkAction)
 
-    // returns true if it has updated any wildcards
+    /**
+     * Note: it modifies [ResolveResult.Ok.hadUpdatedWildcards] in the [result].
+     */
     suspend fun putResolveAnswer(
         name: DnsName,
         answer: List<DnsAnswer>,
         result: ResolveResult.Ok
-    ): Boolean  {
+    )  {
         val now = TimeSource.Monotonic.markNow()
         val expiration = now + result.ttl
         val entry = Entry(answer, result.addresses.toSet(), now, expiration)
-        var result: ArrayList<Pair<SendChannel<ResolveResult>, ResolveResult>>? = null
+        var sendChannels: ArrayList<Pair<SendChannel<ResolveResult>, ResolveResult>>? = null
         mutex.withLock {
             val node = getNode(name)
             val updated = node.entry?.ips != entry.ips
@@ -102,25 +104,25 @@ class DnsNameResolveCache {
                 cur = cur.parent
             }
             if (lastChannel == null) return@withLock
-            result = ArrayList<Pair<SendChannel<ResolveResult>, ResolveResult>>()
+            sendChannels = ArrayList<Pair<SendChannel<ResolveResult>, ResolveResult>>()
             cur = node
             while (cur != null) {
                 val channels = cur.channels
                 if (channels != null && channels.isNotEmpty()) {
                     val ips = ResolveResult.Ok(cur.computeAllIps())
                     for (channel in channels) {
-                        result += channel to ips
+                        sendChannels += channel to ips
                     }
                 }
                 if (cur == lastChannel) break
                 cur = cur.parent
             }
         }
-        if (result == null) return false
-        for ((channel, resolve) in result) {
+        if (sendChannels == null) return
+        for ((channel, resolve) in sendChannels) {
             channel.send(resolve)
         }
-        return true
+        result.hadUpdatedWildcards = true
     }
 
     suspend fun getResolveAnswer(name: DnsName): List<DnsAnswer>? = mutex.withLock {

@@ -21,8 +21,10 @@ sealed class ResolveResult {
     data class Ok(
         val addresses: Collection<IpAddress>,
         override val ttl: Duration = nativeResolveTtl,
-        val elapsed: Duration = Duration.ZERO // time it took to wait for result
+        val elapsed: Duration = Duration.ZERO, // time it took to wait for result
     ) : ResolveResult() {
+        var hadUpdatedWildcards: Boolean = false
+
         override fun toString(): String = buildString {
             appendListForLog(addresses)
             append(" TTL:")
@@ -30,7 +32,8 @@ sealed class ResolveResult {
             append(elapsedLogString())
         }
 
-        fun elapsedLogString() = if (elapsed > Duration.ZERO) " {${elapsed.inWholeMilliseconds} ms}" else ""
+        fun elapsedLogString() = if (elapsed == Duration.ZERO) "" else
+            " {${elapsed.inWholeMilliseconds} ms}${if (hadUpdatedWildcards) "*" else ""}"
     }
     data class Err(val message: String, override val ttl: Duration = resolveAgainOnError) : ResolveResult() {
         override fun toString(): String = message

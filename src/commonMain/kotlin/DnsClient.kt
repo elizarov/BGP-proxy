@@ -154,24 +154,23 @@ class DnsClient(
         val elapsed = startMark?.elapsedNow() ?: Duration.ZERO
         val result = response.toResolveResult(elapsed)
         if (response == null || result !is ResolveResult.Ok) return result
-        val hadUpdatedWildcards = cache.putResolveAnswer(name, response.answer, result)
-        if (delayUpdated && hadUpdatedWildcards) {
+        cache.putResolveAnswer(name, response.answer, result)
+        if (delayUpdated && result.hadUpdatedWildcards) {
             delay(delayUpdatedWildcardResponse)
         }
         if (src != null) {
-            logResolveResult(src, name, result, if (hadUpdatedWildcards) "*" else "+")
+            logResolveResult(src, name, result)
         }
         return result
     }
 
-    private fun logResolveResult(src: DnsQuerySource, name: DnsName, result: ResolveResult, suffix: String = "") {
+    private fun logResolveResult(src: DnsQuerySource, name: DnsName, result: ResolveResult) {
         buildString {
             append(src)
             append(": ")
             append(name)
             append(": ")
             append(result)
-            append(suffix)
         }.let { log(it) }
     }
 }
