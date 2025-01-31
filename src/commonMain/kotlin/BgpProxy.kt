@@ -5,7 +5,7 @@ import io.ktor.network.sockets.*
 import io.ktor.utils.io.core.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
-import kotlinx.io.writeUShort
+import kotlinx.io.*
 
 data class ResolvedConfigPrefixes(
     val op: ConfigOp,
@@ -55,9 +55,10 @@ fun main(args: Array<String>) = runBlocking {
     val localCommunities = setOf(BgpCommunity(endpoint.autonomousSystem, 0u))
 
     if (dnsProxy != null) {
+        val dnsDispatcher = Dispatchers.Default.limitedParallelism(1)
         dnsProxy.dnsClient.initDnsClient()
-        launch { dnsProxy.dnsClient.runDnsClient() }
-        launch { dnsProxy.runDnsProxy() }
+        launch(dnsDispatcher) { dnsProxy.dnsClient.runDnsClient() }
+        launch(dnsDispatcher) { dnsProxy.runDnsProxy() }
     }
 
     // resolve configuration and transform resolved config into BpgState

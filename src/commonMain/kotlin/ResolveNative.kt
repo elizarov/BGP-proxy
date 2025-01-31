@@ -5,7 +5,7 @@ expect fun nativeResolveHostAddr(host: String): ResolveResult
 
 @OptIn(DelicateCoroutinesApi::class, ExperimentalCoroutinesApi::class)
 fun newNativeResolverFactory(): ResolverFactory {
-    val nativeResolveDispatcher = newSingleThreadContext("Resolver")
+    val nativeResolveDispatcher = Dispatchers.IO.limitedParallelism(1)
     return ResolverFactory { host ->
         flow {
             val result = nativeResolveHostAddr(host)
